@@ -1,0 +1,25 @@
+# Copy to config.yaml and adjust paths, or leave watch_roots empty
+# to auto-detect "* - Student Work/{Submitted,Working} files" folders.
+
+# Optional: folder scanned for "* - Student Work" subfolders. Defaults to the
+# project root. Set this if the class folders live elsewhere (e.g. OneDrive).
+# Can also be overridden with the PANOPTICON_STUDENT_WORK_ROOT env var.
+# student_work_root: "C:/Users/<you>/OneDrive - <org>/Panopticon"
+
+watch_roots: []
+  # - path: "./9 Digital Technology Class 1A - Student Work/Submitted files"
+  #   label: "9 Digital Tech 1A"
+  #   kind: submitted          # or "working"
+
+ignore_globs:
+  - "**/~$*"
+  - "**/*.tmp"
+  - "**/.od*"
+  - "**/desktop.ini"
+  - "**/Thumbs.db"
+
+poll_fallback_seconds: 30
+
+server:
+  host: 127.0.0.1
+  port: 8765

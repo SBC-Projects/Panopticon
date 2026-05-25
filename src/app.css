@@ -1,0 +1,92 @@
+:root {
+  --bg: #0f1419;
+  --surface: #1a2332;
+  --surface2: #243044;
+  --border: #2d3a4f;
+  --text: #e7ecf3;
+  --muted: #8b9cb3;
+  --accent: #3d8bfd;
+  --accent-dim: #2563b8;
+  --new: #34d399;
+  --new-bg: rgba(52, 211, 153, 0.12);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.primary:hover {
+  background: var(--accent-dim);
+}
+
+input,
+select {
+  font: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.45rem 0.65rem;
+  border-radius: 6px;
+}
+
+a {
+  color: var(--accent);
+}
+
+.preview-html {
+  background: #fff;
+  color: #111;
+  padding: 1.5rem 2rem;
+  border-radius: 8px;
+  max-height: calc(100vh - 12rem);
+  overflow: auto;
+  line-height: 1.6;
+}
+
+.preview-html h1,
+.preview-html h2,
+.preview-html h3 {
+  margin-top: 1.25em;
+}
+
+.preview-frame {
+  width: 100%;
+  min-height: 60vh;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.preview-image {
+  max-width: 100%;
+  border-radius: 8px;
+}

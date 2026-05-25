@@ -1,0 +1,11 @@
+node_modules/
+dist/
+data/
+*.db
+.DS_Store
+desktop.ini
+
+# Local, machine-specific config — copy config.example.yaml and edit.
+config.yaml
+.env
+.env.local
