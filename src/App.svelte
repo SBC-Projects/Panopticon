@@ -252,7 +252,7 @@
       </main>
     </div>
   {:else}
-    <AssignmentMonitor />
+    <AssignmentMonitor {summary} />
   {/if}
 </div>
 

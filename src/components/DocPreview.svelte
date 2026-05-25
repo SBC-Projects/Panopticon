@@ -11,9 +11,13 @@
 
   interface Props {
     submission: Submission | null;
+    /** Optional: scroll the preview to a heading id (set on h1–h3 via data-heading-id). */
+    scrollToHeading?: string | null;
   }
 
-  let { submission }: Props = $props();
+  let { submission, scrollToHeading = null }: Props = $props();
+
+  let previewHtmlEl: HTMLDivElement | null = $state(null);
 
   let preview = $state<PreviewResponse | null>(null);
   let initialLoading = $state(false);
@@ -102,6 +106,19 @@
     loadedMtime = null;
     void loadPreview(submission.id, submission.last_modified_at, false);
   }
+
+  $effect(() => {
+    const heading = scrollToHeading;
+    void preview;
+    void loadedMtime;
+    if (!heading || !previewHtmlEl) return;
+    const target = previewHtmlEl.querySelector<HTMLElement>(
+      `[data-heading-id="${CSS.escape(heading)}"]`
+    );
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
 </script>
 
 {#if !submission}
@@ -138,7 +155,9 @@
   {:else if error}
     <p class="error">{error}</p>
   {:else if preview?.type === "html"}
-    <div class="preview-html">{@html preview.html}</div>
+    <div class="preview-html" bind:this={previewHtmlEl}>
+      {@html preview.html}
+    </div>
   {:else if preview?.type === "binary"}
     {#if preview.mime.startsWith("image/")}
       <img

@@ -9,6 +9,8 @@
   --accent-dim: #2563b8;
   --new: #34d399;
   --new-bg: rgba(52, 211, 153, 0.12);
+  --warn: #fbbf24;
+  --warn-bg: rgba(251, 191, 36, 0.12);
   font-family: "Segoe UI", system-ui, sans-serif;
   color: var(--text);
   background: var(--bg);

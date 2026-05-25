@@ -96,6 +96,48 @@ export async function triggerScan(): Promise<{ scanned: number; added: number }>
   return res.json();
 }
 
+export interface StudentResponse {
+  student: string;
+  submission_id: string;
+  filename: string;
+  kind: SubmissionKind;
+  extension: string;
+  size_bytes: number;
+  first_seen_at: string;
+  last_modified_at: string;
+  word_count: number | null;
+  excerpt: string;
+  status: "new" | "seen";
+}
+
+export async function fetchAssignmentResponses(
+  cls: string,
+  assignment: string,
+  kind?: SubmissionKind
+): Promise<StudentResponse[]> {
+  const q = new URLSearchParams();
+  if (kind) q.set("kind", kind);
+  const url =
+    `${API}/assignments/${encodeURIComponent(cls)}` +
+    `/${encodeURIComponent(assignment)}/responses?${q}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to load responses");
+  return res.json();
+}
+
+export interface Heading {
+  id: string;
+  level: 1 | 2 | 3;
+  text: string;
+}
+
+export async function fetchStructure(submissionId: string): Promise<Heading[]> {
+  const res = await fetch(`${API}/submissions/${submissionId}/structure`);
+  if (!res.ok) throw new Error("Failed to load structure");
+  const data = (await res.json()) as { headings: Heading[] };
+  return data.headings;
+}
+
 export interface SubmissionChangedEvent {
   type: "submission-changed";
   id: string;

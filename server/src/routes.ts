@@ -4,7 +4,9 @@ import path from "node:path";
 import type { SubmissionStore } from "./db.js";
 import { buildPreview, getFileStream } from "./preview.js";
 import { scanWatchRoots } from "./scanner.js";
-import type { AppConfig } from "./types.js";
+import { getDocStats } from "./metrics.js";
+import { getStructure } from "./structure.js";
+import type { AppConfig, Submission, SubmissionKind } from "./types.js";
 import type { EventBus } from "./events.js";
 
 export function createRouter(
@@ -90,6 +92,68 @@ export function createRouter(
     res.json(result);
   });
 
+  router.get(
+    "/assignments/:label/:assignment/responses",
+    async (req, res) => {
+      const label = decodeURIComponent(req.params.label);
+      const assignment = decodeURIComponent(req.params.assignment);
+      const kindParam = req.query.kind as string | undefined;
+      const kind: SubmissionKind | undefined =
+        kindParam === "submitted" || kindParam === "working"
+          ? kindParam
+          : undefined;
+
+      const rows = store.list({
+        watch_root_label: label,
+        assignment,
+        kind,
+      });
+
+      const latestPerStudent = pickLatestPerStudent(rows);
+      const responses = await Promise.all(
+        latestPerStudent.map(async (row) => {
+          const stats = await getDocStats(
+            row.id,
+            row.absolute_path,
+            row.extension,
+            row.last_modified_at
+          );
+          return {
+            student: row.student,
+            submission_id: row.id,
+            filename: row.filename,
+            kind: row.kind,
+            extension: row.extension,
+            size_bytes: row.size_bytes,
+            first_seen_at: row.first_seen_at,
+            last_modified_at: row.last_modified_at,
+            word_count: stats.word_count,
+            excerpt: stats.excerpt,
+            status: row.status,
+          };
+        })
+      );
+
+      responses.sort((a, b) => a.student.localeCompare(b.student));
+      res.json(responses);
+    }
+  );
+
+  router.get("/submissions/:id/structure", async (req, res) => {
+    const row = store.getById(req.params.id);
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    const headings = await getStructure(
+      row.id,
+      row.absolute_path,
+      row.extension,
+      row.last_modified_at
+    );
+    res.json({ headings });
+  });
+
   router.get("/preview/:id", async (req, res) => {
     const row = store.getById(req.params.id);
     if (!row) {
@@ -147,4 +211,29 @@ export function createRouter(
   });
 
   return router;
+}
+
+/**
+ * Pick one row per student for the assignment rollup:
+ *   - prefer the latest `.docx`
+ *   - fall back to the latest file of any extension if the student has no docx
+ *
+ * `store.list` returns rows ordered by `last_modified_at DESC`, so the first
+ * row we see for a given (student, ext) is the latest.
+ */
+function pickLatestPerStudent(rows: Submission[]): Submission[] {
+  const latestDocx = new Map<string, Submission>();
+  const latestAny = new Map<string, Submission>();
+  for (const row of rows) {
+    if (!latestAny.has(row.student)) latestAny.set(row.student, row);
+    if (row.extension === ".docx" && !latestDocx.has(row.student)) {
+      latestDocx.set(row.student, row);
+    }
+  }
+  const out: Submission[] = [];
+  const students = new Set<string>([...latestAny.keys()]);
+  for (const student of students) {
+    out.push(latestDocx.get(student) ?? latestAny.get(student)!);
+  }
+  return out;
 }

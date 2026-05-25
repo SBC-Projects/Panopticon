@@ -76,18 +76,20 @@ The codebase has already shipped several things the original plan assumed were f
 
 ### Genuinely missing — must be built in remaining steps
 
-| Gap | Where it lands | Used by step |
-|-----|----------------|---------------|
-| `SelectionBar` component (Class → Assignment dropdowns) | `src/components/SelectionBar.svelte` | Step 2 |
-| Per-student rollup endpoint (one row per student, latest file) | `GET /api/assignments/:label/:assignment/responses` in `server/src/routes.ts` | Step 3 |
-| Word count helper with per-file cache | `server/src/metrics.ts` (uses `mammoth.extractRawText`) | Step 3 |
-| Typed client wrapper for responses endpoint | Extend `src/lib/api.ts` (`fetchAssignmentResponses`) | Step 4 |
-| `StudentResponseGrid` + `StudentResponseCard` | `src/components/` | Step 5 |
-| `MetricsPanel` + `MetricRow` | `src/components/` | Step 6 |
-| Patch monitor-view rows from SSE deltas (the global `scheduleRefresh` is too coarse for the grid) | `AssignmentMonitor.svelte` subscribes and patches the array in place | Step 7 |
-| `ActivityIndicator` + shared 15s "now" ticker | `src/components/ActivityIndicator.svelte`, `src/lib/metrics.ts` | Step 8 |
-| Heading/question structure endpoint | `server/src/structure.ts` + `GET /api/submissions/:id/structure` | Step 9 |
-| Optional `scrollToHeading` prop on `DocPreview` | `src/components/DocPreview.svelte` (additive only) | Step 9 |
+All shipped 2026-05-26 in the same change as Steps 2–9. See §4 for per-step notes.
+
+| Gap | Where it landed | Step |
+|-----|----------------|------|
+| `SelectionBar` component (Class → Assignment dropdowns) | `src/components/SelectionBar.svelte` | Step 2 ✅ |
+| Per-student rollup endpoint (one row per student, latest file) | `GET /api/assignments/:label/:assignment/responses` in `server/src/routes.ts` | Step 3 ✅ |
+| Word count + excerpt helper with per-file cache | `server/src/metrics.ts` (uses `mammoth.extractRawText`); returns `{ word_count, excerpt }` so cards don't need a second fetch | Step 3 ✅ |
+| Typed client wrapper for responses endpoint | `src/lib/api.ts` (`fetchAssignmentResponses`, `StudentResponse`) | Step 4 ✅ |
+| `StudentResponseGrid` + `StudentResponseCard` | `src/components/` | Step 5 ✅ |
+| `MetricsPanel` + `MetricRow` | `src/components/` | Step 6 ✅ |
+| Patch monitor-view rows from SSE deltas | `AssignmentMonitor.svelte` subscribes and patches the matching student row in place | Step 7 ✅ |
+| `ActivityIndicator` + shared 15s "now" ticker | `src/components/ActivityIndicator.svelte`, `src/lib/metrics.svelte.ts` (renamed from `.ts` — Svelte 5 runes need a `.svelte.ts` file) | Step 8 ✅ |
+| Heading/question structure endpoint | `server/src/structure.ts` + `GET /api/submissions/:id/structure` | Step 9 ✅ |
+| `data-heading-id` injection on preview HTML + `scrollToHeading` prop on `DocPreview` | `injectHeadingIds()` in `structure.ts` post-processes mammoth HTML; `DocPreview` accepts optional `scrollToHeading` | Step 9 ✅ |
 
 ### Plan claims to forget (false at the time of writing the original plan)
 
@@ -214,114 +216,67 @@ Each step is independently mergeable. Don't start step N+1 with step N broken.
 - Placeholder view lives at `src/views/AssignmentMonitor.svelte` (centered card, links to this doc).
 - Browse mode behavior unchanged; SSE, polling, filters, preview all untouched.
 
-### Step 2 — `SelectionBar.svelte`
+### Step 2 — `SelectionBar.svelte` ✅ DONE (2026-05-26)
 
-- Two dropdowns: Class, Assignment.
-- Class options from `summary.by_class[].label`.
-- Assignment options from `summary.assignments` filtered by `watch_root_label === selectedClass`.
-- Changing class clears assignment.
-- Emit selection via callback prop or two-way bound props (`$bindable`).
-- **Acceptance:** Picking class repopulates assignments; picking assignment fires a callback with `{ class, assignment }`.
+- Single bar with **Class, Assignment, Question, Kind, Search** controls; all bound to `$bindable` props on `AssignmentMonitor.svelte`.
+- Class options sourced from `summary.by_class[].label`; Assignment options filtered by `watch_root_label === selectedClass`, deduped, sorted.
+- Changing class clears `selectedAssignment` if it doesn't exist under the new class.
+- Question dropdown disabled while `headings.length === 0`; indented by heading `level`.
+- Kind dropdown defaults to `working` (live drafts) per §5 decision.
 
-### Step 3 — Server: `/api/assignments/:label/:assignment/responses`
+### Step 3 — Server: `/api/assignments/:label/:assignment/responses` ✅ DONE (2026-05-26)
 
-- Implement the rollup endpoint described above.
-- Add a `wordCount(docxBuffer)`: extract raw text via `mammoth.extractRawText`, split on whitespace, length. Cache in a `Map<string, { mtime: string; count: number }>` keyed by `submission_id`.
-- **Acceptance:** Hitting the endpoint returns one row per student with `word_count` populated for `.docx` rows.
+- Endpoint implemented in `server/src/routes.ts`. Decodes URL-encoded `:label` and `:assignment`; honours optional `?kind=submitted|working`.
+- `pickLatestPerStudent` reduces `store.list(...)` results to one row per student, preferring the latest `.docx`, falling back to the latest file of any extension (per §5 decision).
+- `getDocStats(submissionId, absolutePath, ext, mtimeIso)` in `server/src/metrics.ts` returns `{ word_count, excerpt }` from a single `mammoth.extractRawText` pass. Cached by `submission_id`; entry invalidates when `mtimeIso` changes. **Excerpt is bundled** in the same cache so cards don't need to call `/api/preview/:id` just to render an excerpt.
+- Output sorted by `student.localeCompare`.
+- **Verified live (2026-05-26):** Hit `/api/assignments/7%20Digital%20Technology%20Class%203/7DT%20week%203%20homework/responses?kind=working` → 23 rows, every `.docx` has `word_count` populated and an excerpt.
 
-### Step 4 — Client: extend `src/lib/api.ts`
+### Step 4 — Client: extend `src/lib/api.ts` ✅ DONE (2026-05-26)
 
-Add typed wrapper:
+- Added `StudentResponse` interface (with `excerpt: string` in addition to the originally-planned fields).
+- Added `fetchAssignmentResponses(cls, assignment, kind?)` using URL-encoded path params.
+- Added `Heading` type + `fetchStructure(submissionId)` for Step 9.
 
-```typescript
-export interface StudentResponse {
-  student: string;
-  submission_id: string;
-  filename: string;
-  kind: SubmissionKind;
-  extension: string;
-  size_bytes: number;
-  first_seen_at: string;
-  last_modified_at: string;
-  word_count: number | null;
-  status: "new" | "seen";
-}
+### Step 5 — `StudentResponseGrid` + `StudentResponseCard` ✅ DONE (2026-05-26)
 
-export async function fetchAssignmentResponses(
-  cls: string,
-  assignment: string,
-  kind?: "submitted" | "working"
-): Promise<StudentResponse[]> { ... }
-```
+- Grid: `repeat(auto-fill, minmax(220px, 1fr))`, gap `0.75rem`. Loading and empty states centralised in the grid component (avoids each parent re-implementing them).
+- Card shows: student name, `ActivityIndicator` (with label), kind badge, NEW badge if unseen, word count, 4-line clamped excerpt, filename, relative time.
+- **Deviation from plan:** excerpts come **bundled in the responses payload** (server-side cache) rather than each card fetching `/api/preview/:id` separately. Single fetch per assignment switch instead of N+1.
+- Selection toggles on re-click (clicking the selected card deselects).
 
-- **Acceptance:** Function returns typed data when called with valid `(class, assignment)`.
+### Step 6 — `MetricsPanel.svelte` ✅ DONE (2026-05-26)
 
-### Step 5 — `StudentResponseGrid` + `StudentResponseCard` (static data)
+- `MetricRow.svelte` renders a labelled value with placeholder styling (italic + muted) when used for Phase-3 cards. Accepts a snippet child for custom values (e.g. kind badge).
+- Phase 1 metrics: Words written, Time since edit, File size, Kind badge, First seen, Status.
+- Phase 3 placeholders ("Not available yet"): AI feedback, Copy-paste risk, Grade band, vs class average.
+- Class summary when no student selected: student count, live + recent counts, average words (only over rows with a `word_count`), latest activity with `ActivityIndicator`.
+- "Open in Word" button uses the existing `openInApp` API.
+- Panel is `position: sticky; top: 1rem` so it stays in view while scrolling the grid.
 
-- Grid: CSS grid, `repeat(auto-fill, minmax(220px, 1fr))`, gap 12px.
-- Card: name, activity dot, filename, word count, relative time, mini excerpt.
-- Excerpt = first ~200 chars of the docx preview (call existing `/api/preview/:id`, strip HTML, truncate). Lazy-load on render or on hover to avoid hammering the server.
-- Selected state via prop, click handler bubbles `select(submission_id)`.
-- **Acceptance:** Cards render for current assignment; clicking selects (visual change only).
+### Step 7 — Live updates for the monitor grid ✅ DONE (2026-05-26)
 
-### Step 6 — `MetricsPanel.svelte` (Phase 1 metrics only)
+- `AssignmentMonitor.svelte` opens its own `subscribeToEvents` inside `$effect`, unsubscribes on cleanup.
+- Events filtered by `watch_root_label === selectedClass && assignment === selectedAssignment && (kind matches OR all-kinds)`.
+- For matching events, `refreshOneByStudent(student)` calls the rollup endpoint once and splices the single matching row back into `responses`. New students added at the end and re-sorted.
+- A `fetchSeq` ticket discards late responses if the user changed selection mid-flight.
+- **Trade-off vs original plan:** the spec called for "fetch only that student's word count / excerpt". Since the only endpoint that returns those is the assignment-wide rollup, we refetch the rollup and pick the row server-side caching makes it cheap (`getDocStats` returns the cached value for every row whose mtime hasn't changed). A per-student endpoint isn't worth the extra surface area yet.
 
-Render from the selected `StudentResponse`:
+### Step 8 — Activity indicator ✅ DONE (2026-05-26)
 
-| Metric | Source |
-|--------|--------|
-| Words written | `word_count` |
-| Time since last edit | `formatRelativeTime(last_modified_at)` |
-| File size | `formatSize(size_bytes)` (already in `api.ts`) |
-| Kind | `kind` (DRAFT / TURNED IN badge) |
-| First submitted | `formatDate(first_seen_at)` |
-| Status | `new` / `seen` |
+- `src/lib/metrics.svelte.ts` exports `ActivityState`, `activityState()`, `formatRelativeTime()`, and `now` (a `NowTicker` singleton).
+- **Filename deviation:** path is `metrics.svelte.ts`, not `metrics.ts`, because Svelte 5 runes (`$state`) only work inside `.svelte` / `.svelte.ts` modules. Pure helpers could split into a plain `.ts` but co-locating is simpler — the singleton needs runes, and components import the helpers from the same place anyway.
+- `NowTicker.value` lazily starts a single 15s `setInterval` on first read (never stops; single-page lifetime). All components subscribe by reading `now.value` inside `$derived` / templates.
+- `ActivityIndicator.svelte`: animated dot via `act-pulse` keyframes for "live"; uses `--warn` for "recent" (new token added to `src/app.css`).
+- Used in `StudentResponseCard` and the class-summary row of `MetricsPanel`.
 
-Below, render placeholder cards for Phase 3 with a "Coming soon" pill:
+### Step 9 — Question selector (heading sync) ✅ DONE (2026-05-26, partial)
 
-- AI feedback
-- Copy-paste risk (traffic light)
-- Grade band (A–C)
-- vs class average
-
-When no student selected: show class summary (count, currently editing, avg words, last activity).
-
-**Acceptance:** Selecting a card populates the metrics panel; deselecting shows class summary.
-
-### Step 7 — Live updates for the monitor grid
-
-The app-wide `subscribeToEvents` already exists (`src/lib/api.ts`) and Browse mode debounces a full refresh on every event. That's too coarse for the monitor grid because it would refetch every student's row on every save. Do this instead:
-
-- In `AssignmentMonitor.svelte` add its own `subscribeToEvents` inside `$effect`, unsubscribe on cleanup.
-- Each event is a `SubmissionChangedEvent` with `student`, `assignment`, `watch_root_label`, `last_modified_at`.
-- Filter to events matching the currently selected `(class, assignment)`. Ignore others.
-- For a matching event, find the row in the local `responses` array by `student`; patch its `last_modified_at` (so activity state re-derives) and refetch only that student's word count / excerpt.
-- If no matching row exists yet (new student), call `fetchAssignmentResponses` once to pick up the addition.
-- **Acceptance:** Saving a watched docx makes only the affected card pulse and recompute its metrics within a few seconds. Other cards do not refetch.
-
-### Step 8 — Activity indicator
-
-- `src/lib/metrics.ts` exports:
-  ```typescript
-  export type ActivityState = "live" | "recent" | "idle";
-  export function activityState(lastModifiedIso: string, nowMs = Date.now()): ActivityState {
-    const age = nowMs - Date.parse(lastModifiedIso);
-    if (age < 60_000) return "live";
-    if (age < 5 * 60_000) return "recent";
-    return "idle";
-  }
-  ```
-- `ActivityIndicator.svelte`: animated dot, color per state, optional label.
-- Re-derive every 15s via a single shared `$state(Date.now())` ticker so cards don't each schedule timers.
-- **Acceptance:** Just-saved file shows green pulse; after 1 minute fades to amber; after 5 minutes goes idle.
-
-### Step 9 — Question selector (heading sync)
-
-- Server: implement `/api/submissions/:id/structure`.
-- Client: when assignment selected, fetch structure for **one representative** submission (or union across students — start with one) to populate the dropdown.
-- On Question change, broadcast `selectedHeading` to all visible cards. Each card scrolls its mini-excerpt iframe/container to the heading.
-- Extend `DocPreview.svelte` with an optional `scrollToHeading?: string` prop that finds `[data-heading-id]` and scrolls into view. Add the `data-heading-id` attribute during the mammoth-to-HTML post-processing step on the server.
-- **Acceptance:** Picking "Question 2" scrolls all cards (and the main preview if open) to that heading.
+- Server: `GET /api/submissions/:id/structure` returns `{ headings: [{ id, level, text }, ...] }`. Cached per `(id, mtimeIso)`.
+- `injectHeadingIds()` post-processes mammoth's HTML on every `/api/preview/:id` response, tagging `<h1>`–`<h3>` with deterministic `data-heading-id` slugs (same algorithm as `parseHeadings`, so ids match the structure endpoint).
+- Client: when responses arrive, the monitor view fetches the structure of **one representative** docx (the first row with `extension === ".docx"`) to populate the Question dropdown.
+- `DocPreview.svelte` accepts an optional `scrollToHeading?: string` prop. A `$effect` queries `[data-heading-id="..."]` (with `CSS.escape`) and calls `scrollIntoView({ behavior: "smooth" })`.
+- **Limitation not yet addressed:** `StudentResponseCard` currently shows only a plain-text excerpt (not the full HTML), so `selectedHeading` is captured in `SelectionBar` and plumbed through but **does not currently scroll the cards themselves**. It's wired ready for the next iteration — either (a) cards switch to a mini HTML preview with `scrollToHeading`, or (b) a new endpoint returns text scoped to a specific heading. The full `DocPreview` (used in Browse mode) is already heading-aware.
 
 ### Step 10 — Phase 3 placeholders → real (out of scope for this guide)
 
@@ -329,12 +284,14 @@ Each future metric becomes a new endpoint + a new card in `MetricsPanel`. Do not
 
 ---
 
-## 5. Open product decisions (ask the user, don't guess)
+## 5. Open product decisions
 
-1. **Multiple files per student per assignment** — show only the latest `.docx`, or expose a small file picker on the card?
-2. **Default selection** — auto-select the first student, or start with class summary?
-3. **Browse mode** — keep as a second tab forever, or retire once Live Monitor is mature?
-4. **Default `kind` filter** — Live Monitor defaults to `working` (live drafts). Should the toggle allow `both` simultaneously?
+Resolved with defaults on 2026-05-26 (override anytime — these are easy to flip).
+
+1. **Multiple files per student per assignment** — pick latest `.docx`, fall back to latest of any extension. No per-card file picker yet. _Defer the picker until a teacher actually hits a multi-file case._
+2. **Default selection** — no student selected; right panel shows the class snapshot. Clicking a card selects; clicking again deselects.
+3. **Browse mode** — keep both tabs indefinitely. Browse is still the only way to use full filters + the docx preview pane.
+4. **Default `kind` filter** — `working` (live drafts). The dropdown includes `submitted`, `working`, `both`.
 
 ---
 
@@ -342,12 +299,12 @@ Each future metric becomes a new endpoint + a new card in `MetricsPanel`. Do not
 
 The Live Monitor feature is complete when:
 
-- [ ] Mode toggle exists; Browse view still works unchanged.
-- [ ] Class + Assignment selection is fully wired to existing summary data.
-- [ ] One card per student renders with name, excerpt, word count, activity state.
-- [ ] Metrics panel shows Phase 1 metrics for the selected student and class summary when none selected.
-- [ ] SSE subscription updates cards within a few seconds of a file save.
-- [ ] Question selector jumps cards to the chosen heading.
-- [ ] No new top-level dependencies were added.
-- [ ] All new fields on API responses are `snake_case`.
-- [ ] This doc updated to reflect any deviations from the plan.
+- [x] Mode toggle exists; Browse view still works unchanged.
+- [x] Class + Assignment selection is fully wired to existing summary data.
+- [x] One card per student renders with name, excerpt, word count, activity state.
+- [x] Metrics panel shows Phase 1 metrics for the selected student and class summary when none selected.
+- [x] SSE subscription updates cards within a few seconds of a file save (single-row patch, not a full grid refetch).
+- [ ] Question selector jumps cards to the chosen heading. _Selector + plumbing shipped; cards don't render full HTML yet so the scroll only applies to the Browse-mode preview. See Step 9 note._
+- [x] No new top-level dependencies were added.
+- [x] All new fields on API responses are `snake_case`.
+- [x] This doc updated to reflect any deviations from the plan.

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import mammoth from "mammoth";
 import type { Submission } from "./types.js";
+import { injectHeadingIds } from "./structure.js";
 
 export type PreviewResult =
   | { type: "html"; html: string }
@@ -40,7 +41,7 @@ export async function buildPreview(
     try {
       const buffer = fs.readFileSync(filePath);
       const result = await mammoth.convertToHtml({ buffer });
-      return { type: "html", html: result.value };
+      return { type: "html", html: injectHeadingIds(result.value) };
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Conversion failed";
       return {
