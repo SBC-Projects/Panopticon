@@ -6,6 +6,7 @@ import { buildPreview, getFileStream } from "./preview.js";
 import { scanWatchRoots } from "./scanner.js";
 import { getDocStats } from "./metrics.js";
 import { getStructure } from "./structure.js";
+import { getClassRoster, findDraftElsewhere } from "./roster.js";
 import type { AppConfig, Submission, SubmissionKind } from "./types.js";
 import type { EventBus } from "./events.js";
 
@@ -109,6 +110,40 @@ export function createRouter(
         kind,
       });
 
+      // Helper: if a row's own content is empty/missing, look for the
+      // student's draft in the OPPOSITE kind so the card can offer a
+      // one-click jump to it.
+      const buildDraftPointer = async (
+        student: string,
+        rowAssignment: string,
+        rowKind: SubmissionKind
+      ) => {
+        if (!kind) return null; // "both" view — no opposite kind to point at
+        const draft = findDraftElsewhere(
+          store,
+          label,
+          student,
+          rowKind,
+          rowAssignment
+        );
+        if (!draft) return null;
+        const dStats = await getDocStats(
+          draft.id,
+          draft.absolute_path,
+          draft.extension,
+          draft.last_modified_at
+        );
+        return {
+          submission_id: draft.id,
+          kind: draft.kind,
+          assignment: draft.assignment,
+          filename: draft.filename,
+          word_count: dStats.word_count,
+          excerpt: dStats.excerpt,
+          last_modified_at: draft.last_modified_at,
+        };
+      };
+
       const latestPerStudent = pickLatestPerStudent(rows);
       const responses = await Promise.all(
         latestPerStudent.map(async (row) => {
@@ -118,21 +153,65 @@ export function createRouter(
             row.extension,
             row.last_modified_at
           );
+          // Only look for a draft elsewhere if THIS row has no useful
+          // content — otherwise it's noise on cards that are already fine.
+          const isEmpty =
+            stats.excerpt_status === "empty_body" ||
+            stats.excerpt_status === "not_downloaded" ||
+            stats.excerpt_status === "missing";
+          const draft_elsewhere = isEmpty
+            ? await buildDraftPointer(row.student, row.assignment, row.kind)
+            : null;
           return {
             student: row.student,
             submission_id: row.id,
             filename: row.filename,
             kind: row.kind,
+            assignment: row.assignment,
             extension: row.extension,
             size_bytes: row.size_bytes,
             first_seen_at: row.first_seen_at,
             last_modified_at: row.last_modified_at,
             word_count: stats.word_count,
             excerpt: stats.excerpt,
+            excerpt_status: stats.excerpt_status,
             status: row.status,
+            draft_elsewhere,
           };
         })
       );
+
+      // Round out the list with every enrolled student who hasn't shown up
+      // in `rows`. We use the union roster across all watch roots for this
+      // class so e.g. a student with no Submitted file but an active draft
+      // is still visible (and we point at that draft via draft_elsewhere).
+      const roster = getClassRoster(config, label);
+      const submitted = new Set(responses.map((r) => r.student));
+      const placeholderKind: SubmissionKind = kind ?? "submitted";
+      for (const student of roster) {
+        if (submitted.has(student)) continue;
+        const draft_elsewhere = await buildDraftPointer(
+          student,
+          assignment,
+          placeholderKind
+        );
+        responses.push({
+          student,
+          submission_id: "",
+          filename: "",
+          kind: placeholderKind,
+          assignment,
+          extension: "",
+          size_bytes: 0,
+          first_seen_at: "",
+          last_modified_at: "",
+          word_count: null,
+          excerpt: "",
+          excerpt_status: "not_submitted",
+          status: "seen",
+          draft_elsewhere,
+        });
+      }
 
       responses.sort((a, b) => a.student.localeCompare(b.student));
       res.json(responses);

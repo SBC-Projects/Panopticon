@@ -7,6 +7,7 @@ import { injectHeadingIds } from "./structure.js";
 export type PreviewResult =
   | { type: "html"; html: string }
   | { type: "binary"; mime: string }
+  | { type: "empty"; reason: "not_downloaded" | "empty_body"; message: string }
   | { type: "unsupported"; message: string }
   | { type: "error"; message: string };
 
@@ -38,12 +39,47 @@ export async function buildPreview(
   const ext = submission.extension || path.extname(filePath).toLowerCase();
 
   if (ext === ".docx") {
+    let buffer: Buffer;
     try {
-      const buffer = fs.readFileSync(filePath);
+      buffer = fs.readFileSync(filePath);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Read failed";
+      console.warn(
+        `[preview] read failed for ${path.basename(filePath)}: ${msg}`
+      );
+      return {
+        type: "error",
+        message: `Could not read Word file: ${msg}. Use Open in Word.`,
+      };
+    }
+
+    if (buffer.length === 0) {
+      return {
+        type: "empty",
+        reason: "not_downloaded",
+        message:
+          "OneDrive hasn't downloaded this file yet (0 bytes on disk). It should appear once sync catches up — or right-click it in Explorer → Always keep on this device.",
+      };
+    }
+
+    try {
       const result = await mammoth.convertToHtml({ buffer });
-      return { type: "html", html: injectHeadingIds(result.value) };
+      const html = result.value || "";
+      const hasText = /\S/.test(html.replace(/<[^>]+>/g, ""));
+      if (!hasText) {
+        return {
+          type: "empty",
+          reason: "empty_body",
+          message:
+            "This document doesn't contain any text yet. The student may not have started, or Word's autosave hasn't pushed their latest edits to OneDrive yet.",
+        };
+      }
+      return { type: "html", html: injectHeadingIds(html) };
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Conversion failed";
+      console.warn(
+        `[preview] mammoth failed for ${path.basename(filePath)}: ${msg}`
+      );
       return {
         type: "error",
         message: `Could not preview Word file: ${msg}. Use Open in Word.`,

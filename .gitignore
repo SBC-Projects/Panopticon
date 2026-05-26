@@ -9,3 +9,11 @@ desktop.ini
 config.yaml
 .env
 .env.local
+
+# One-off verification scripts, fixtures, and notes.
+# See docs/workflows/testing.md for the scratch/ convention.
+scratch/
+scratch-*/
+scratch-*.mjs
+scratch-*.ts
+scratch-*.js

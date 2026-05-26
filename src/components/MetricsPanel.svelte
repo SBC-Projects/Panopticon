@@ -15,6 +15,8 @@
 
   interface ClassSummary {
     student_count: number;
+    submitted_count: number;
+    not_submitted_count: number;
     live_count: number;
     recent_count: number;
     avg_words: number | null;
@@ -117,9 +119,19 @@
     <section>
       <h4>Class snapshot</h4>
       <MetricRow
-        label="Students with work"
-        value={classSummary.student_count}
+        label="Roster"
+        value={`${classSummary.student_count} student${classSummary.student_count === 1 ? "" : "s"}`}
       />
+      <MetricRow
+        label="With a file here"
+        value={`${classSummary.submitted_count} / ${classSummary.student_count}`}
+      />
+      {#if classSummary.not_submitted_count > 0}
+        <MetricRow
+          label="No file yet"
+          value={classSummary.not_submitted_count}
+        />
+      {/if}
       <MetricRow
         label="Editing now"
         value={`${classSummary.live_count} live · ${classSummary.recent_count} recent`}

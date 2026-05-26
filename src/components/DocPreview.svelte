@@ -172,6 +172,14 @@
         src={`${fileUrl(submission.id)}?v=${encodeURIComponent(loadedMtime ?? "")}`}
       ></iframe>
     {/if}
+  {:else if preview?.type === "empty"}
+    <div class="empty-state" class:not-synced={preview.reason === "not_downloaded"}>
+      <p>{preview.message}</p>
+      <div class="empty-actions">
+        <button type="button" onclick={manualRefresh}>Re-check file</button>
+        <button type="button" class="primary" onclick={handleOpen}>Open in Word</button>
+      </div>
+    </div>
   {:else if preview?.type === "unsupported" || preview?.type === "error"}
     <p class="muted">{preview.message}</p>
     <button type="button" class="primary" onclick={handleOpen}>Open in Word</button>
@@ -272,5 +280,31 @@
 
   .error {
     color: #f87171;
+  }
+
+  .empty-state {
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .empty-state.not-synced {
+    border-color: var(--warn);
+    color: var(--text);
+  }
+
+  .empty-state p {
+    margin: 0;
+    line-height: 1.45;
+  }
+
+  .empty-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
   }
 </style>

@@ -6,6 +6,7 @@
     fetchAssignmentResponses,
     fetchStructure,
     subscribeToEvents,
+    type DraftElsewhere,
     type StudentResponse,
     type SubmissionKind,
     type Summary,
@@ -73,7 +74,10 @@
   async function loadHeadings() {
     headings = [];
     selectedHeading = "";
-    const representative = responses.find((r) => r.extension === ".docx");
+    // Skip roster placeholders — they have no real submission_id to fetch.
+    const representative = responses.find(
+      (r) => r.extension === ".docx" && r.submission_id
+    );
     if (!representative) return;
     const ticket = fetchSeq;
     try {
@@ -166,8 +170,16 @@
     let recent = 0;
     let words = 0;
     let wordRows = 0;
+    let submittedCount = 0;
+    let notSubmittedCount = 0;
     let latest: string | null = null;
     for (const r of responses) {
+      // Roster placeholders have no submission, no activity, no words.
+      if (r.excerpt_status === "not_submitted") {
+        notSubmittedCount++;
+        continue;
+      }
+      submittedCount++;
       const state = activityState(r.last_modified_at, now.value);
       if (state === "live") live++;
       else if (state === "recent") recent++;
@@ -181,6 +193,8 @@
     }
     return {
       student_count: responses.length,
+      submitted_count: submittedCount,
+      not_submitted_count: notSubmittedCount,
       live_count: live,
       recent_count: recent,
       avg_words: wordRows > 0 ? Math.round(words / wordRows) : null,
@@ -189,8 +203,21 @@
   });
 
   function handleSelect(submissionId: string) {
+    if (!submissionId) return; // ignore roster placeholders
     selectedSubmissionId =
       selectedSubmissionId === submissionId ? null : submissionId;
+  }
+
+  /** Switch view to the student's draft/turned-in copy in the opposite kind.
+   *  We set the submission id first so the existing post-load reconciler
+   *  (in `loadResponses`) keeps the selection iff that id shows up in the
+   *  freshly-fetched list. */
+  function handleJumpToDraft(draft: DraftElsewhere) {
+    selectedSubmissionId = draft.submission_id;
+    selectedKind = draft.kind;
+    if (draft.assignment !== selectedAssignment) {
+      selectedAssignment = draft.assignment;
+    }
   }
 
   const emptyMessage = $derived(
@@ -222,6 +249,7 @@
       responses={filteredResponses}
       selectedId={selectedSubmissionId}
       onSelect={handleSelect}
+      onJumpToDraft={handleJumpToDraft}
       {loading}
       empty={emptyMessage}
     />

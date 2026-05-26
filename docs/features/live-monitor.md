@@ -2,7 +2,7 @@
 
 Goal: build an **assignment-centric** view where a teacher picks a class and assignment, sees every student's response on the left as live-updating cards, and sees per-student metrics on the right. Later, a Question selector at the top jumps every card to the same heading.
 
-> Read [`README.md`](./README.md) first for hard rules (stack, naming, no new frameworks).
+> Read [`../conventions.md`](../conventions.md) first for hard rules (stack, naming, no new frameworks) and [`../architecture.md`](../architecture.md) for the system overview. This file is the design + build log for the Live Monitor view only.
 
 ---
 
@@ -284,6 +284,65 @@ Each future metric becomes a new endpoint + a new card in `MetricsPanel`. Do not
 
 ---
 
+## 4.5 Phase 2 — Roster + empty-state UX (shipped 2026-05-26)
+
+The first cut of the Live Monitor (Steps 1–9) only showed rows that already had a `Submission` in the DB. In the wild this hid two real cases:
+
+- **Empty-but-real files.** A `Submitted` file might be 0 bytes on disk (OneDrive Files-On-Demand placeholder) or parse-cleanly-but-empty (SharePoint coauthor template that hasn't been pulled down yet). The card just rendered blank.
+- **Missing students.** If a student never started, or only saved a `Working` draft, they simply weren't in the grid at all — the teacher had no way to see "Bear hasn't done anything" without flipping filters.
+
+Both ship as one change because they share infrastructure (the `ExcerptStatus` enum + `roster.ts` helpers).
+
+### What changed
+
+| Surface | Change |
+|---------|--------|
+| `server/src/metrics.ts` | `DocStats` now carries `excerpt_status: ExcerptStatus`. Codes: `ok`, `empty_body`, `not_downloaded`, `missing`, `unsupported_ext`, `parse_error`, `not_submitted`. Cache key includes file size so a 0-byte → real-bytes transition invalidates the entry even if mtime didn't change. Parse failures are `console.warn`-logged with the basename instead of silently returning empty. |
+| `server/src/preview.ts` | `PreviewResult` gains a `type: "empty"` variant with `reason: "not_downloaded" \| "empty_body"` and a user-facing `message`. Read failures and mammoth conversion failures log to stderr. |
+| `server/src/roster.ts` (new) | `getClassRoster(config, label, kind?)` — union of immediate-subfolder names across every watch root sharing the class label. `findDraftElsewhere(store, label, student, currentKind, currentAssignment)` — finds the student's "best match" submission in the OPPOSITE kind, preferring same root-assignment family (first ` / `-separated segment) then most-recent fallback. |
+| `server/src/routes.ts` | `/assignments/:label/:assignment/responses` adds two enrichments: (1) every row now carries `assignment`, `excerpt_status`, and an optional `draft_elsewhere` pointer (only set when the row's own content is empty and the opposite kind has something); (2) after picking the latest per student, the roster is merged in as `excerpt_status: "not_submitted"` placeholder rows. Placeholders have an empty `submission_id` and zero-value file fields. |
+| `src/lib/api.ts` | Mirrors the server: `ExcerptStatus` union, `DraftElsewhere` interface, `StudentResponse.assignment`, `StudentResponse.excerpt_status`, `StudentResponse.draft_elsewhere`. `PreviewResponse` gains the `empty` variant. |
+| `src/components/StudentResponseCard.svelte` | Root element is now `<div role="button">` not `<button>` (so the inline "View draft →" can be a real nested `<button>`). Renders per-status messaging (`emptyMessage` derived). When the current row is empty and `draft_elsewhere` is set, shows an inline preview block (excerpt of the draft) + a one-click "View draft →" jump button. Roster placeholders get a dashed border, `NO SUBMISSION` badge, and no activity dot. |
+| `src/components/StudentResponseGrid.svelte` | `each` key falls back to `roster:${student}` when `submission_id` is empty (placeholders share the empty string). Forwards `onJumpToDraft` down to each card. |
+| `src/components/MetricsPanel.svelte` | Class snapshot now shows `submitted_count / student_count` ("With a file here") and a separate `not_submitted_count` row when > 0. |
+| `src/components/DocPreview.svelte` | Renders the new `empty` preview variant with a two-button row: "Re-check file" (forces a manual reload) and "Open in Word". Adds a `not-synced` class when `reason === "not_downloaded"` so the box gets a warm border. |
+| `src/views/AssignmentMonitor.svelte` | `loadHeadings` skips roster placeholders. `classSummary` derived state separates submitted vs not-submitted and only counts real rows for live/recent/words. New `handleJumpToDraft(draft)` flips `selectedKind`, `selectedAssignment` (if different), and `selectedSubmissionId` so the targeted card lights up after the next fetch. |
+| `package.json` | `dev:server` is now `tsx watch server/src/index.ts` so server-side edits hot-reload during development. |
+
+### What we ruled out
+
+Two parallel investigations were done before settling on the UX-only fix above. Both ruled out for now:
+
+- **Microsoft Graph API.** Tested with the Microsoft-published Graph PowerShell SDK client id + device code flow (`scratch-probe-graph.mjs`). Blocked at sign-in by `AADSTS90097` — tenant requires admin consent for the requested scopes. Will revisit if/when IT grants consent. The probe script is gitignored (`scratch-*` prefix) so a future agent can pick it up.
+- **Word COM automation.** A round of probe scripts (deleted, not committed) opened the same docx via PowerShell COM and compared the extracted text to what `mammoth` saw. They returned identical content — confirming that when `mammoth` reports "empty body" the file genuinely is empty on disk. Word's GUI is showing the live SharePoint coauthor copy, which neither `fs.readFileSync` nor Word COM can reach without going through Graph. No advantage to building a COM bridge.
+
+### Card empty-state copy (for reference)
+
+The card derives one of these messages based on `excerpt_status` and whether `draft_elsewhere` is set. Keep the tone factual; never blame the student.
+
+| Status | Has draft elsewhere? | Message |
+|--------|----------------------|---------|
+| any empty status | yes | `Empty here. Student has a {N-word}{Working draft\|turned-in copy} — click below to jump to it.` |
+| `not_downloaded` | no | `OneDrive hasn't downloaded this file to your machine yet (0 bytes locally). Right-click → Always keep on this device, or wait for sync.` |
+| `empty_body` | no | `Local copy is empty. Either the student really hasn't typed anything in this version, or OneDrive hasn't pulled the latest SharePoint state yet.` |
+| `missing` | no | `File is no longer on disk.` |
+| `parse_error` | no | `Couldn't read this document. Open in Word to inspect.` |
+| `unsupported_ext` | no | `Preview not available for .{ext} files.` |
+| `not_submitted` (submitted view) | no | `Not turned in yet.` |
+| `not_submitted` (working view) | no | `Hasn't started this assignment yet.` |
+
+### Verification recipe
+
+1. `npm run dev`. Open a class + assignment where you know at least one Submitted file is 0 bytes on disk (or rename one temporarily).
+2. Card for that student renders with the **dashed border + warn-toned message** describing the empty state.
+3. If the same student has a non-empty Working draft, the card shows the draft excerpt and a **`View draft →`** button.
+4. Click the jump button → `selectedKind` flips to `working`, the grid refetches, that student's card is selected.
+5. Pick a class where someone enrolled has no `Submitted` file at all. Their card appears as a roster placeholder (`NO SUBMISSION`).
+6. Edit a draft on disk. Within ~3 s the matching card pulses and word count updates (Step 7 SSE path still works; no full grid refetch).
+7. `npm run typecheck` passes.
+
+---
+
 ## 5. Open product decisions
 
 Resolved with defaults on 2026-05-26 (override anytime — these are easy to flip).
@@ -308,3 +367,4 @@ The Live Monitor feature is complete when:
 - [x] No new top-level dependencies were added.
 - [x] All new fields on API responses are `snake_case`.
 - [x] This doc updated to reflect any deviations from the plan.
+- [x] Phase 2 (roster + empty-state messaging + draft-elsewhere pointer) shipped. See §4.5.

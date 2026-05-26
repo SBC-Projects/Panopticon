@@ -36,6 +36,12 @@ export interface Summary {
 export type PreviewResponse =
   | { type: "html"; html: string; last_modified_at: string }
   | { type: "binary"; mime: string; last_modified_at: string }
+  | {
+      type: "empty";
+      reason: "not_downloaded" | "empty_body";
+      message: string;
+      last_modified_at: string;
+    }
   | { type: "unsupported"; message: string; last_modified_at: string }
   | { type: "error"; message: string; last_modified_at: string };
 
@@ -96,18 +102,50 @@ export async function triggerScan(): Promise<{ scanned: number; added: number }>
   return res.json();
 }
 
+export type ExcerptStatus =
+  | "ok"
+  | "empty_body"
+  | "not_downloaded"
+  | "missing"
+  | "unsupported_ext"
+  | "parse_error"
+  | "not_submitted";
+
+/**
+ * Pointer to a "draft elsewhere" — when the row the teacher is looking at
+ * is empty/missing AND the same student has a non-empty file in the OTHER
+ * watch-root kind, the server gives us enough to render an inline preview
+ * and a one-click jump.
+ */
+export interface DraftElsewhere {
+  submission_id: string;
+  kind: SubmissionKind;
+  assignment: string;
+  filename: string;
+  word_count: number | null;
+  excerpt: string;
+  last_modified_at: string;
+}
+
 export interface StudentResponse {
   student: string;
+  /** Empty when excerpt_status === "not_submitted" (roster placeholder). */
   submission_id: string;
   filename: string;
   kind: SubmissionKind;
+  assignment: string;
   extension: string;
   size_bytes: number;
   first_seen_at: string;
   last_modified_at: string;
   word_count: number | null;
   excerpt: string;
+  excerpt_status: ExcerptStatus;
   status: "new" | "seen";
+  /** Set when the current row is empty AND the student has a non-empty
+   *  submission in the opposite kind. Null otherwise. Always null when the
+   *  view is filtered to "both kinds" (no opposite to point at). */
+  draft_elsewhere: DraftElsewhere | null;
 }
 
 export async function fetchAssignmentResponses(
