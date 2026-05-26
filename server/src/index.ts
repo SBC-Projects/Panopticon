@@ -22,13 +22,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log("Scanning watch roots...");
-  const scanResult = scanWatchRoots(config.watch_roots, store);
-  console.log(
-    `Scan complete: ${scanResult.scanned} files checked, ${scanResult.added} new entries.`
-  );
-
+  // `npm run scan` keeps the original synchronous behaviour — print "Scan
+  // complete" before exit so CI / scripts can rely on it.
   if (scanOnly) {
+    console.log("Scanning watch roots...");
+    const scanResult = scanWatchRoots(config.watch_roots, store);
+    console.log(
+      `Scan complete: ${scanResult.scanned} files checked, ${scanResult.added} new entries.`
+    );
     store.close();
     return;
   }
@@ -64,8 +65,18 @@ async function main(): Promise<void> {
       );
     }
   );
-  watcher.start();
 
+  // Boot order:
+  //   1. listen()   — HTTP/SSE binds; returning users see existing DB rows
+  //                   immediately (no waiting on the OneDrive walk).
+  //   2. watcher    — chokidar with ignoreInitial:true; only future changes.
+  //   3. scan       — deferred to the next tick so listen()'s callback can
+  //                   print first; emits submission-changed per new row so
+  //                   the UI populates progressively over SSE.
+  //
+  // The OneDrive scan can take ~90 s on Windows even for a few hundred
+  // files (reparse-point semantics). Running it ahead of listen() used to
+  // make `npm run dev` look broken for the first minute and a half.
   const { host, port } = config.server;
   app.listen(port, host, () => {
     console.log(`Panopticon API: http://${host}:${port}`);
@@ -74,6 +85,8 @@ async function main(): Promise<void> {
     } else {
       console.log(`Dashboard: http://${host}:${port}`);
     }
+    watcher.start();
+    setImmediate(() => runBackgroundScan(config.watch_roots, store, events));
   });
 
   const shutdown = async () => {
@@ -83,6 +96,26 @@ async function main(): Promise<void> {
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+}
+
+/** Run the boot-time scan without blocking the HTTP server. Logs progress
+ *  in the same shape `scanOnly` does so the dev terminal looks familiar.
+ *  Swallows errors with a console.error — a partial scan is acceptable;
+ *  killing the server post-listen is not. */
+function runBackgroundScan(
+  roots: import("./types.js").WatchRoot[],
+  store: SubmissionStore,
+  events: EventBus
+): void {
+  console.log("Scanning watch roots in background...");
+  try {
+    const scanResult = scanWatchRoots(roots, store, events);
+    console.log(
+      `Scan complete: ${scanResult.scanned} files checked, ${scanResult.added} new entries.`
+    );
+  } catch (e) {
+    console.error("Background scan failed:", e);
+  }
 }
 
 main().catch((err) => {

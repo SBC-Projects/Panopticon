@@ -18,6 +18,15 @@ Two coloured streams print to one terminal:
 
 `tsx` runs the server with no build step, so any `.ts` change restarts it. Vite hot-reloads the UI without a refresh in most cases.
 
+The server binds within ~5 seconds on a freshly-restarted machine; the OneDrive scan then runs **in the background** and populates rows over SSE. Brief `ECONNREFUSED` spam from Vite during the first second or two is normal. See [`../architecture.md#boot-sequence`](../architecture.md#boot-sequence).
+
+**If `npm run dev` hangs at the SQLite warning past ~30 s** (server side never prints `Panopticon API:`), it's almost always vite + tsx-watch contending on Windows file I/O while the OneDrive watch roots are being set up. Two reliable workarounds:
+
+- Run the two halves in separate terminals: `npm run dev:server` in one, `npm run dev:web` in another. Same code paths, none of the I/O contention. The server side typically binds in 5–10 s.
+- Or be patient with `npm run dev` — it does come up eventually (sometimes 60–90 s). Do **not** Ctrl-C; that just leaves orphan `tsx watch` processes and OneDrive locks on `data/panopticon.db`, making the next run even slower.
+
+If the server has hung for minutes, kill any stray `node.exe` processes (`Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -match 'tsx|server/src/index' }` then `Stop-Process -Force`) before retrying.
+
 ### Server only
 
 ```powershell
@@ -127,7 +136,7 @@ Standard browser DevTools.
 |---------|--------------|---------------|
 | `config.yaml not found` | Forgot the copy step | `server/src/config.ts` |
 | `No watch roots found` | `student_work_root` not set, or no `* - Student Work` folders under it | `server/src/config.ts` `discoverWatchRoots` |
-| API up, no submissions | Watcher hasn't seen any files yet — try `POST /api/scan` or `npm run scan` | `server/src/scanner.ts` |
+| API up, no submissions | On a fresh DB this is expected for the first ~90 s — the background scan is still walking OneDrive. Rows trickle in over SSE. If it persists, hit `POST /api/scan` or `npm run scan` | `server/src/scanner.ts`, `server/src/index.ts` (boot sequence) |
 | Live dot stays red | SSE disconnect not reconnecting | `subscribeToEvents` in `src/lib/api.ts` |
 | Preview shows stale content | Stale-guard hit a bug — check `currentReqId` logic | `src/components/DocPreview.svelte` |
 | `mammoth` throws on a file | Corrupt/locked `.docx`. The error bubbles into `/api/preview/:id` as `{ type: "error" }` | `server/src/preview.ts` |

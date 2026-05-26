@@ -89,7 +89,10 @@ export function createRouter(
   });
 
   router.post("/scan", (_req, res) => {
-    const result = scanWatchRoots(config.watch_roots, store);
+    // Pass `events` so a manually-triggered rescan also emits
+    // submission-changed per new row — same progressive UI behaviour
+    // as the deferred boot scan.
+    const result = scanWatchRoots(config.watch_roots, store, events);
     res.json(result);
   });
 

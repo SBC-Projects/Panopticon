@@ -42,6 +42,21 @@ A teacher-side desktop dashboard for Microsoft Teams assignment submissions. Eve
 
 ---
 
+## Boot sequence
+
+In order, from `server/src/index.ts`:
+
+1. **Load config + open SQLite.** Existing rows from `data/panopticon.db` are immediately queryable.
+2. **`app.listen(host, port)`** — HTTP + SSE bind. **Anything past this point runs after the API is reachable**, so a fresh `npm run dev` returns 200 from `/api/health` within ~5 seconds on Windows.
+3. **`watcher.start()`** — chokidar starts with `ignoreInitial: true`. Only *future* `add` / `change` / `unlink` events get processed.
+4. **Background scan** (via `setImmediate`) — `scanWatchRoots(roots, store, events)` walks every configured root, upserts each file, and **emits `submission-changed` per newly-inserted row** so connected clients populate progressively over SSE.
+
+The scan walks every configured watch root and `fs.statSync`s each file. On Windows + OneDrive Files-On-Demand that adds up — a few hundred files can take 30–90 s on a cold cache, even more if OneDrive is rehydrating placeholders. Deferring the walk behind `listen()` is what makes dev feel snappy; emitting events from it is what keeps the first-run UX correct.
+
+`npm run scan` (one-shot, exits when done) keeps the original synchronous order — `scanResult` is printed before exit, so CI / scripts can still rely on it.
+
+---
+
 ## Data flow (a file appears)
 
 1. Student turns in or saves a draft in Teams.
@@ -64,12 +79,12 @@ A poll fallback (`poll_fallback_seconds`, default 30) walks the watch roots peri
 
 | File | Role |
 |------|------|
-| `index.ts` | App entrypoint. Loads config, scans roots, starts watcher, mounts router. |
+| `index.ts` | App entrypoint. Loads config, mounts router, binds HTTP/SSE, starts watcher, kicks off the background scan. See *Boot sequence* above. |
 | `config.ts` | Loads `config.yaml`. Resolves `student_work_root`, auto-discovers `* - Student Work` folders. |
 | `types.ts` | Canonical `Submission`, `SubmissionKind`, `WatchRoot`, `AppConfig`. |
 | `parser.ts` | `parseSubmissionPath` (relative path → `{student, assignment, filename}`), `submissionId`, `shouldIgnoreFile`. |
 | `db.ts` | `SubmissionStore` — SQLite via `node:sqlite`. Schema, list, upsert, summary. |
-| `scanner.ts` | One-shot recursive walk of all watch roots. Used on boot and from `POST /api/scan`. |
+| `scanner.ts` | One-shot recursive walk of all watch roots. Used by the deferred boot scan, the `npm run scan` one-shot, and `POST /api/scan`. When an `EventBus` is passed, emits `submission-changed` per newly-inserted row so clients populate progressively. |
 | `watcher.ts` | `SubmissionWatcher` — chokidar + debounce + poll fallback. Emits `submission-changed` events. |
 | `events.ts` | `EventBus` — simple in-process pub/sub for SSE. |
 | `routes.ts` | All HTTP/SSE endpoints. See [`reference/api.md`](./reference/api.md). |
