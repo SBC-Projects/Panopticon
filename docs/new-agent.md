@@ -4,6 +4,8 @@ You are a fresh agent starting a new feature or fix on Panopticon. Follow these 
 
 The user will describe the feature/fix in their `/new-agent` prompt. The rest of this doc is your workflow.
 
+**This skill bookends with [`/end-agent`](./end-agent.md).** `/new-agent` covers: orient → plan → implement. `/end-agent` covers: finalise tests → clean up → docs → commit → merge → push. Don't run any of `/end-agent`'s steps from here — when you finish implementing, hand off and let the user invoke it.
+
 ---
 
 ## Step 0 — Orient yourself (always)
@@ -16,6 +18,14 @@ Read these two files **fully** before doing anything else:
 Then skim [`reference/glossary.md`](./reference/glossary.md) so you don't misuse terms like *class*, *assignment*, *kind*, *watch root*.
 
 **Do not read every feature doc.** Use the routing table next.
+
+### Resuming an in-progress branch
+
+If `git branch --show-current` returns a non-`main` branch and `git status` / `git log -3` show prior work, you're picking up where someone (or a previous agent) left off — **not** starting fresh:
+
+1. Read the matching `docs/features/<name>.md` to see which step the previous agent stopped at and what deviations they recorded.
+2. Run `npm run typecheck` and `npm test` to confirm the baseline is healthy. If it isn't, fix that before adding anything new.
+3. If it's unclear where to resume — especially if the user's `/new-agent` prompt doesn't obviously match the in-progress branch — **stop and ask the user** whether to continue, abandon, or branch fresh from `main`.
 
 ---
 
@@ -59,11 +69,11 @@ If `main` has uncommitted changes from your previous task, **stop and ask the us
 
 ## Step 3 — Set up a verification recipe
 
-Before writing feature code, decide **how you will know it works**. See [`workflows/testing.md`](./workflows/testing.md) for the patterns Panopticon uses. At minimum:
+Before writing feature code, decide **how you will know it works**. See [`workflows/testing.md`](./workflows/testing.md) for the four tiers (typecheck, Vitest, scratch scripts, browser recipes). At minimum:
 
-- **Server change**: a `scratch/` script (`.mjs` or `.ts` via `tsx`) that hits the endpoint or calls the function in isolation, and prints expected vs actual.
+- **Pure helper or algorithm**: a Vitest file co-located with the source (`<name>.test.ts`).
+- **Server change touching DB / FS / HTTP**: a `scratch/` script that hits the endpoint or calls the function with real data.
 - **Client change**: a manual reproduction recipe (steps in the browser, network tab checks, expected SSE behaviour).
-- **Both**: do both.
 
 Also make sure you can run the app in dev:
 
@@ -72,9 +82,14 @@ npm install
 npm run dev    # server on :8765, vite UI on :5173
 ```
 
-If the dev server crashes on startup, **fix that first** — never try to add features on top of a broken baseline. See [`workflows/debugging.md`](./workflows/debugging.md).
+Confirm the existing test suite is green **before** you start changing things:
 
-You don't need a passing automated test before coding, but you need a way to demonstrate the change works that doesn't rely on "trust me".
+```powershell
+npm test
+npm run typecheck
+```
+
+If either fails, **fix that first** — never build on a broken baseline. See [`workflows/debugging.md`](./workflows/debugging.md).
 
 ---
 
@@ -103,8 +118,8 @@ This gate is cheap and catches misunderstandings before you've written 500 lines
 For each step from your plan:
 
 1. Make the minimum change to land that step.
-2. Run `npm run typecheck`. Fix errors before continuing.
-3. Exercise your verification recipe from Step 3.
+2. Run `npm run typecheck` and `npm test`. Fix failures before continuing.
+3. Exercise your verification recipe from Step 3 (Vitest for pure logic, scratch script for integration, browser steps for UI).
 4. Update the feature doc to mark that step done (with a date and any deviations from the original plan).
 5. Move to the next step.
 
@@ -118,19 +133,37 @@ Hard rules during implementation (see [`conventions.md`](./conventions.md) for t
 
 ---
 
-## Step 6 — Finish
+## Step 6 — Hand off to `/end-agent`
 
-Before declaring complete:
+Once your implementation is working, **don't** commit, merge, or push from here. The user will invoke the `/end-agent` skill which runs the full wrap-up workflow:
+
+- Backfills any missing tests.
+- Cleans up debug code, runs the suite again.
+- Updates docs.
+- Commits, merges to `main`, pushes.
+
+Your responsibility before handing off:
 
 - [ ] `npm run typecheck` passes.
-- [ ] Your verification recipe from Step 3 succeeds.
+- [ ] `npm test` passes.
+- [ ] Your Step 3 verification recipe still succeeds end-to-end.
 - [ ] The feature doc reflects what shipped, including any plan deviations.
-- [ ] If you touched the API or DB, [`reference/api.md`](./reference/api.md) / [`reference/data-model.md`](./reference/data-model.md) is updated.
-- [ ] If you introduced a new feature doc, the routing table in [`README.md`](./README.md) has a row for it.
-- [ ] No `console.log` debris in committed code.
-- [ ] No new files under `scratch/` are staged for commit (scratch is gitignored).
+- [ ] You've reported back to the user with a short summary of what changed and what they should test in the browser.
 
-**Do not commit unless the user explicitly asks.** When they do ask, follow the git rules in your system instructions.
+The end-agent flow lives at [`end-agent.md`](./end-agent.md) — read it if you're curious, but don't start running it yourself unless the user explicitly says "wrap up" / "ship it" / runs the `/end-agent` skill.
+
+---
+
+## Communication style
+
+How to interact with the user across the whole flow:
+
+- **One pointed question beats five assumptions.** If you're about to write code based on a guess, stop and ask first. Prefer multiple-choice phrasing where the options are real ("Should the new endpoint return one row per student or one row per file?") over open-ended.
+- **Time-box exploration.** If you've read 8–10 files and still don't have a plan you're confident in, surface that to the user — don't read another 20 hoping the answer appears.
+- **Surface assumptions explicitly in the plan.** Don't bury "I'm assuming X" inside step 7 of a long plan. State assumptions at the top so the user can correct them before the STOP gate.
+- **Per-step reports are one line.** After each implementation step in Step 5, say what shipped and what's next. Don't re-ask for permission to continue if the plan was already approved.
+- **Don't run state-changing git commands without an explicit signal from the user.** Reading is fine (`git status`, `git log`, `git diff`, `git branch`). Anything that changes state — `switch <other branch>`, `pull`, `stash`, `reset`, `commit`, `push`, branch deletion — needs a clear instruction. The relevant signal for wrap-up is the user invoking `/end-agent`.
+- **Hand off explicitly when you finish implementing.** End your final message with something like: *"Implementation complete. Run `/end-agent` when you want to test, clean up, commit, merge, and push."* Don't quietly stop.
 
 ---
 
@@ -141,5 +174,7 @@ Before declaring complete:
 - **Renaming DB-backed fields to camelCase on the wire.** Don't.
 - **Adding a new top-level dependency to do something `mammoth`, `chokidar`, `express`, or `yaml` already do.**
 - **Polling at short intervals.** SSE is wired end-to-end. Use it.
-- **Inventing test infrastructure.** There's no test runner yet; use the `scratch/` pattern.
+- **Adding alternative test infrastructure.** Vitest is set up — write `*.test.ts` next to the source. Don't introduce Jest, Playwright, or anything else without a strong reason and an ask.
+- **Running `/end-agent`-style commands yourself.** Commit / merge / push belong to the wrap-up skill. Hand off; don't pre-empt.
+- **Declaring "done" on the user's behalf.** Your job ends with a hand-off; the user decides when to ship.
 - **Skipping the STOP gate in Step 4.** It's there because it works.

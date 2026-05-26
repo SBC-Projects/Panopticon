@@ -29,7 +29,8 @@ npm start                            # serves UI + API on :8765
 
 - **Users (teachers):** [`docs/how-to-use.md`](./docs/how-to-use.md) — install, configure, day-to-day usage, troubleshooting.
 - **AI coding agents:** [`docs/README.md`](./docs/README.md) — start here. Routes you to the right design / reference / workflow doc.
-  - First-time onboarding: [`docs/new-agent.md`](./docs/new-agent.md).
+  - Starting a feature/fix: [`docs/new-agent.md`](./docs/new-agent.md).
+  - Wrapping up (test → clean up → commit → merge → push): [`docs/end-agent.md`](./docs/end-agent.md).
   - Architecture overview: [`docs/architecture.md`](./docs/architecture.md).
   - Hard rules: [`docs/conventions.md`](./docs/conventions.md).
 
@@ -45,6 +46,8 @@ npm start                            # serves UI + API on :8765
 | `npm run build` | Build the UI into `dist/` |
 | `npm start` | Run the server, serving the built UI |
 | `npm run typecheck` | `tsc --noEmit` over the whole repo |
+| `npm test` | Run the Vitest suite once |
+| `npm run test:watch` | Vitest in watch mode |
 
 ---
 

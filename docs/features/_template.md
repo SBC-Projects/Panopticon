@@ -103,11 +103,12 @@ What you're doing. Files touched. Acceptance: how you verify this step in isolat
 
 How a reviewer (or your future self) confirms the feature works.
 
-- **Manual recipe** (browser): numbered steps with expected results at each.
+- **Unit tests (Vitest)**: list the `*.test.ts` files added or extended, with a one-line description of what each covers.
 - **Scratch script(s)**: paths in `scratch/`, one-line description of what each checks.
-- **Typecheck**: `npm run typecheck` passes.
+- **Manual recipe** (browser): numbered steps with expected results at each.
+- **Typecheck + tests**: `npm run typecheck` and `npm test` pass.
 
-See [`../workflows/testing.md`](../workflows/testing.md) for the patterns.
+See [`../workflows/testing.md`](../workflows/testing.md) for the four-tier patterns.
 
 ---
 
@@ -125,6 +126,8 @@ The feature is complete when:
 
 - [ ] All build steps shipped (one box per Step in §5).
 - [ ] `npm run typecheck` passes.
+- [ ] `npm test` passes.
+- [ ] New pure helpers have a `*.test.ts` next to them.
 - [ ] Manual verification recipe in §6 passes end-to-end.
 - [ ] `../reference/api.md` updated if API changed.
 - [ ] `../reference/data-model.md` updated if DB changed.

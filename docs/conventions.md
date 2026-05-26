@@ -8,7 +8,8 @@ Short list of rules that apply to **every** task. If you find yourself wanting t
 
 - **Server**: Node 22+, Express, `node:sqlite`, chokidar, mammoth, yaml. TypeScript via `tsx`.
 - **Client**: Svelte 5 (runes: `$state`, `$derived`, `$effect`), Vite, TypeScript.
-- **No new top-level dependencies** without an explicit ask. Especially: no React, no Vue, no Tailwind, no ORM, no test framework, no state-management library, no router.
+- **Tests**: Vitest, Node environment. Co-located `*.test.ts` files. See [`workflows/testing.md`](./workflows/testing.md).
+- **No new top-level dependencies** without an explicit ask. Especially: no React, no Vue, no Tailwind, no ORM, no alternative test framework, no state-management library, no router.
 
 ---
 
@@ -87,7 +88,9 @@ Grep before you write.
 ## Definition of done — minimum bar
 
 - [ ] `npm run typecheck` passes.
-- [ ] You can demonstrate the change works (script or browser recipe — see [`workflows/testing.md`](./workflows/testing.md)).
+- [ ] `npm test` passes.
+- [ ] New pure helpers have a `*.test.ts` next to them.
+- [ ] You can demonstrate user-visible changes work (browser recipe in the feature doc — see [`workflows/testing.md`](./workflows/testing.md)).
 - [ ] Feature doc updated to reflect what shipped.
 - [ ] `reference/api.md` and `reference/data-model.md` updated if applicable.
 - [ ] No `console.log` debris.

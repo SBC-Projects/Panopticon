@@ -9,8 +9,9 @@ End-users looking for setup/usage instructions: see [`how-to-use.md`](./how-to-u
 ## How agents should use this folder
 
 1. **Always read first**: [`conventions.md`](./conventions.md). It's short and contains the hard rules.
-2. **For a new feature or fix**: follow [`new-agent.md`](./new-agent.md) end-to-end. It tells you the workflow.
-3. **For everything else**: use the routing table below to read **only the docs you need**. Don't read everything — pick the ones that touch your task.
+2. **Starting a new feature or fix** (triggered by `/new-agent`): follow [`new-agent.md`](./new-agent.md) end-to-end.
+3. **Wrapping up — testing, cleanup, commit, merge, push** (triggered by `/end-agent`): follow [`end-agent.md`](./end-agent.md) end-to-end.
+4. **For everything else**: use the routing table below to read **only the docs you need**. Don't read everything — pick the ones that touch your task.
 
 ---
 
@@ -21,6 +22,7 @@ End-users looking for setup/usage instructions: see [`how-to-use.md`](./how-to-u
 | If you are… | Read |
 |-------------|------|
 | Onboarding as a new agent on any task | [`new-agent.md`](./new-agent.md), [`conventions.md`](./conventions.md), [`architecture.md`](./architecture.md) |
+| Wrapping up: testing, cleanup, commit, merge, push | [`end-agent.md`](./end-agent.md) |
 | Adding or changing an HTTP/SSE endpoint | [`reference/api.md`](./reference/api.md), then the feature doc that owns it |
 | Touching the database schema or `Submission` type | [`reference/data-model.md`](./reference/data-model.md), [`conventions.md`](./conventions.md) |
 | Confused by a term (class, assignment, kind, watch root) | [`reference/glossary.md`](./reference/glossary.md) |

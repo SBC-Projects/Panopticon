@@ -76,6 +76,7 @@ A poll fallback (`poll_fallback_seconds`, default 30) walks the watch roots peri
 | `preview.ts` | Reads a file off disk for `/api/preview/:id`. `.docx` → HTML via `mammoth`, others streamed. Distinguishes `empty` (0-byte / empty body), `unsupported`, and `error` outcomes so the client can render the right "why is this blank" panel. |
 | `metrics.ts` | `getDocStats(submission_id, path, ext, mtime)` → `{ word_count, excerpt, excerpt_status }`. Cached by `submission_id`; invalidated on `mtime` **or** size change. Logs `mammoth`/read failures. |
 | `structure.ts` | `.docx` heading extraction + `injectHeadingIds` HTML post-processing for in-page scroll. |
+| `*.test.ts` | Vitest unit tests co-located with the source they cover. |
 | `roster.ts` | `getClassRoster(config, label, kind?)` — union of immediate-subfolder names across the class's watch roots, so the Live Monitor can show enrolled students who haven't submitted. `findDraftElsewhere(...)` — looks up the same student's submission in the OPPOSITE kind to power the "View draft →" jump button. |
 
 ### Client (`src/`)
