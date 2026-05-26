@@ -19,13 +19,22 @@ Then skim [`reference/glossary.md`](./reference/glossary.md) so you don't misuse
 
 **Do not read every feature doc.** Use the routing table next.
 
-### Resuming an in-progress branch
+### Resuming an in-progress branch (opt-in only)
 
-If `git branch --show-current` returns a non-`main` branch and `git status` / `git log -3` show prior work, you're picking up where someone (or a previous agent) left off — **not** starting fresh:
+By default `/new-agent` always sets you up in a fresh worktree on a new branch off `main` (Step 2). You **do not** infer a resume from `git branch --show-current` — if you find yourself on a non-`main` branch unexpectedly, treat it as someone else's space and stop.
 
-1. Read the matching `docs/features/<name>.md` to see which step the previous agent stopped at and what deviations they recorded.
-2. Run `npm run typecheck` and `npm test` to confirm the baseline is healthy. If it isn't, fix that before adding anything new.
-3. If it's unclear where to resume — especially if the user's `/new-agent` prompt doesn't obviously match the in-progress branch — **stop and ask the user** whether to continue, abandon, or branch fresh from `main`.
+To resume in-progress work, the user must say so explicitly in the prompt:
+
+> /new-agent — resume `feat/foo-bar`
+
+If they did:
+
+1. Identify the worktree for that branch via `git worktree list`. If it has one, the user should relaunch you inside that worktree; if it doesn't, ask whether to create one or work from the main checkout.
+2. Verify `git status` is clean. If not, **stop and ask** — never carry someone else's uncommitted work along.
+3. Read the matching `docs/features/<name>.md` to see which step the previous agent stopped at and what deviations they recorded.
+4. Run `npm run typecheck` and `npm test` to confirm the baseline is healthy. If it isn't, fix that before adding anything new.
+
+If the prompt doesn't include "resume", go to Step 2.
 
 ---
 
@@ -45,7 +54,9 @@ If no existing feature doc fits, you'll create one in Step 5 from [`features/_te
 
 ---
 
-## Step 2 — Create a git branch
+## Step 2 — Set up your sandbox (worktree + branch off `main`)
+
+Every `/new-agent` run gets its own **worktree** and its own **branch**, both created off the current tip of `main`. The worktree gives you an isolated working directory; the branch gives you isolated commit history. Together they let multiple agents run against this repo without contending for HEAD.
 
 Branch naming convention:
 
@@ -59,11 +70,47 @@ Branch naming convention:
 
 Use kebab-case after the prefix. Examples: `feat/question-scroll-sync`, `fix/sse-reconnect-leak`.
 
+### If you were launched in the main checkout (`git worktree list` shows one entry, `[main]`)
+
 ```powershell
-git switch -c feat/<short-name>
+# 1. Working tree clean? If anything is uncommitted that you didn't write
+#    this session, STOP and ask the user.
+git status
+
+# 2. Sync main with origin. This is the only time you pull main.
+git fetch origin
+git switch main
+git pull --ff-only
+
+# 3. Create the worktree + branch in one command. If the branch name
+#    already exists locally or on origin, suffix '-2', '-3', etc.
+git worktree add -b <prefix>/<kebab-name> ..\Panopticon-<purpose> main
 ```
 
-If `main` has uncommitted changes from your previous task, **stop and ask the user**. Don't branch off a dirty tree.
+Then **stop and ask the user to relaunch you inside the new worktree** (open `..\Panopticon-<purpose>` as a Cursor workspace or new window). Don't try to continue from the main checkout — Cursor's working directory is fixed for the session.
+
+### If you were launched inside an existing worktree
+
+Most agent sessions start here, because the user already created the worktree before invoking you.
+
+```powershell
+# Confirm you're in the right place.
+git worktree list             # this directory should show with your branch
+git status                    # must be clean
+git branch --show-current     # should be your branch, not main
+```
+
+If `git status` is dirty with files you didn't write, **stop and ask**. If you're on `main` inside a worktree (rare, but possible), stop and ask the user to set up a branch.
+
+### The branch is frozen
+
+Once your branch is created, **do not** `git pull origin main`, `git merge main`, or otherwise pull in changes that landed on `main` after you started. The user handles reconciliation at `/end-agent` time. While you're running, your branch's view of the codebase is fixed at its starting commit.
+
+If you genuinely need something that landed on `main` after your start (e.g. a new helper a previous agent shipped), **stop and ask the user** — don't pull it in unilaterally.
+
+### Don't `git stash`
+
+Worktree + branch + frozen-from-main means you never need to stash. If you need to pause your work — switching focus, the user asking you to detour, hitting a blocker — make a `wip: <one-line note>` commit on your branch instead. Future you can reword or squash it during `/end-agent`. Stashes hide state across sessions and have repeatedly caused this repo's worst git messes.
 
 ---
 
@@ -178,3 +225,8 @@ How to interact with the user across the whole flow:
 - **Running `/end-agent`-style commands yourself.** Commit / merge / push belong to the wrap-up skill. Hand off; don't pre-empt.
 - **Declaring "done" on the user's behalf.** Your job ends with a hand-off; the user decides when to ship.
 - **Skipping the STOP gate in Step 4.** It's there because it works.
+- **Branching off whatever is currently checked out.** Step 2 says branch off `main`, every time. Never branch off another agent's WIP.
+- **Inferring a resume from HEAD position.** The user must say "resume `<branch>`" explicitly. Otherwise assume fresh-branch off `main`.
+- **Pulling `main` into your branch mid-session.** Your branch is frozen at its start commit (Step 2). Reconciliation happens at `/end-agent` time, not by you.
+- **Using `git stash`.** Use a `wip:` commit instead. See Step 2.
+- **Running two agents in the same checkout.** Each agent gets its own worktree. See Step 2.
