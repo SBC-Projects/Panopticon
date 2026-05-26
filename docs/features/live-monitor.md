@@ -258,7 +258,8 @@ Each step is independently mergeable. Don't start step N+1 with step N broken.
 
 - `AssignmentMonitor.svelte` opens its own `subscribeToEvents` inside `$effect`, unsubscribes on cleanup.
 - Events filtered by `watch_root_label === selectedClass && assignment === selectedAssignment && (kind matches OR all-kinds)`.
-- For matching events, `refreshOneByStudent(student)` calls the rollup endpoint once and splices the single matching row back into `responses`. New students added at the end and re-sorted.
+- For matching `submission-changed` events, `refreshOneByStudent(student)` calls the rollup endpoint once and splices the single matching row back into `responses`. New students added at the end and re-sorted.
+- For matching `submission-deleted` events (added 2026-05-26, §4.6), the row whose `submission_id` matches `event.id` is spliced out of `responses` directly — no refetch needed. If the deleted row was selected, `selectedSubmissionId` is cleared so the metrics panel falls back to the class summary.
 - A `fetchSeq` ticket discards late responses if the user changed selection mid-flight.
 - **Trade-off vs original plan:** the spec called for "fetch only that student's word count / excerpt". Since the only endpoint that returns those is the assignment-wide rollup, we refetch the rollup and pick the row server-side caching makes it cheap (`getDocStats` returns the cached value for every row whose mtime hasn't changed). A per-student endpoint isn't worth the extra surface area yet.
 
@@ -340,6 +341,123 @@ The card derives one of these messages based on `excerpt_status` and whether `dr
 5. Pick a class where someone enrolled has no `Submitted` file at all. Their card appears as a roster placeholder (`NO SUBMISSION`).
 6. Edit a draft on disk. Within ~3 s the matching card pulses and word count updates (Step 7 SSE path still works; no full grid refetch).
 7. `npm run typecheck` passes.
+
+---
+
+## 4.6 Phase 2.5 — `submission-deleted` event (in progress, 2026-05-26)
+
+The watcher currently emits `submission-changed` on chokidar `add` / `change` but ignores `unlink`. If a teacher removes a file from OneDrive, the row stays in the DB and the card stays on screen forever. This phase wires up the missing delete path.
+
+### Goal
+
+When a watched file disappears from disk, the row is removed from SQLite and every connected client is told to drop that submission. The card disappears within a few seconds, the metrics panel falls back to the class summary if the deleted card was selected, and the doc-stats / structure caches don't leak the orphaned id.
+
+### Non-goals
+
+- No "trash" / undo. Delete is permanent; if the file reappears the next chokidar `add` will re-insert it with a fresh `first_seen_at`.
+- Not handling a watch root being unmounted wholesale (chokidar fires per-file `unlink`, so we just react file-by-file).
+- No retention of historical "this student turned this in once and then it vanished" state. That's a different feature.
+
+### Gap analysis vs current code
+
+| Surface | Today | Needed |
+|---------|-------|--------|
+| `server/src/events.ts` `AppEvent` union | Only `SubmissionChangedEvent`. | Add `SubmissionDeletedEvent`. |
+| `server/src/db.ts` `SubmissionStore` | `upsertFromFile`, `getById`, `markSeen` only. No deletion. | Add `deleteById(id)` returning the deleted row. |
+| `server/src/watcher.ts` | Listens on `add`/`change` via `scheduleProcess` (1500 ms debounce). No `unlink` handler. Watch-root resolution lives inline inside `processFile`. | Listen on `unlink` immediately (no debounce — the file is already gone). Extract `resolveWatchRoot(filePath)` for reuse and to make it unit-testable. |
+| `server/src/metrics.ts` | `invalidateDocStats(id)` exists. | No code change — just call it from the watcher delete path. |
+| `server/src/structure.ts` | No invalidator exposed; cache leaks ids forever. | Export `invalidateStructure(id)`. |
+| `server/src/index.ts` | Logs `New <kind>: ...` from `onNew`. | Add a parallel `onDeleted` callback that logs `Deleted: [<class>] <student> — <assignment> / <filename>` in the same shape. |
+| `src/lib/api.ts` `AppEvent` union | Mirrors only the changed variant. | Mirror the new delete variant. |
+| `src/views/AssignmentMonitor.svelte` `handleEvent` | Switch on `event.type === "submission-changed"` only. | Handle `submission-deleted`: remove the row whose `submission_id === event.id` from `responses`; if it was the selected row, clear `selectedSubmissionId`. |
+| `src/App.svelte` (browse mode) | `scheduleRefresh()` on any event. | No code change — the debounced refresh already reconciles deletions. |
+| `docs/reference/api.md` SSE section | Lists only `submission-changed`. | Add the delete variant. |
+| `docs/reference/data-model.md` | Store surface mentions upsert/list/getById/mark-seen. Invariant §5 claims "No row is ever deleted by the watcher." | Add `deleteById` to the surface; update or amend invariant 5 (watcher now deletes on `unlink`). |
+| `docs/features/live-monitor.md` Step 7 | "patches the matching student row in place" — only changes. | One-line note that deletes remove the row. |
+
+### Event shape
+
+Keep it minimal — only the fields the client needs to filter and reconcile:
+
+```ts
+export interface SubmissionDeletedEvent {
+  type: "submission-deleted";
+  id: string;
+  student: string;
+  assignment: string;
+  watch_root_label: string;
+}
+```
+
+**Decisions on field set:**
+
+- **No `kind`.** The monitor view reconciles by `submission_id`, not by kind — if a row with this id is in `responses`, it's the one that was deleted regardless of the current `selectedKind` filter. Adding `kind` would be dead weight on the wire and pull the schema further from the spec.
+- **No `filename` / `last_modified_at`.** Nothing in either consumer (the monitor reconciler, the browse-mode debounced refresh) needs these post-delete. They only appear in `submission-changed` because the `onNew` log line uses them; the parallel `Deleted` log line is built from the row returned by `deleteById` (which has every column), not from the event payload.
+- **Match `snake_case`.** Same convention as `submission-changed`.
+
+### Step-by-step plan
+
+Each step is independently mergeable; run `npm run typecheck` and `npm test` between them.
+
+1. **Server event union** — extend `AppEvent` in `server/src/events.ts` with `SubmissionDeletedEvent`. No runtime change yet; just shape.
+2. **Store `deleteById`** — `SELECT ... WHERE id = ?`, then `DELETE FROM submissions WHERE id = ?`. Return the SELECT row (or undefined if there wasn't one). Update the schema doc table.
+3. **Extract `resolveWatchRoot`** — pull the inline `find((r) => filePath === r.path || filePath.startsWith(r.path + path.sep))` into a named function in `watcher.ts` (or a small helper module). Reuse it from both `processFile` and the new delete handler. Add a `*.test.ts` covering: exact-match, child-path match, non-match returns `undefined`, sibling-prefix collision (`.../Submitted files` vs `.../Submitted files (copy)` must not match the latter).
+4. **`structure.ts` invalidator** — add `export function invalidateStructure(id: string)`. Mirror the docstring style on `invalidateDocStats`.
+5. **Watcher `unlink` handler** — add `this.watcher.on("unlink", (p) => this.processDelete(p))`. `processDelete` runs synchronously:
+   - `resolveWatchRoot(filePath)` → if none, ignore.
+   - `parseSubmissionPath(root.path, filePath)` → if null, ignore (lock file, OneDrive sidecar).
+   - `submissionId(root.path, parsed.relative_path)`.
+   - `store.deleteById(id)` → if undefined (we never tracked this file), ignore.
+   - `invalidateDocStats(id)` + `invalidateStructure(id)`.
+   - Build the event payload from the returned row + `events.emit({ type: "submission-deleted", ... })`.
+   - Call `this.onDeleted?.(row)` so `index.ts` can log it.
+6. **`onDeleted` log in `index.ts`** — pass a second callback to `SubmissionWatcher` that prints `Deleted: [<watch_root_label>] <student> — <assignment> / <filename>` (single line, mirrors the existing `New <kind>:` line).
+7. **Client event union** — mirror the new variant in `src/lib/api.ts`.
+8. **Monitor reconciliation** — in `AssignmentMonitor.svelte`, refactor `handleEvent` into a small switch on `event.type`:
+   - `submission-changed` → existing behaviour.
+   - `submission-deleted` → guard by `watch_root_label === selectedClass && assignment === selectedAssignment`, splice the row out of `responses` (match by `submission_id`), and clear `selectedSubmissionId` if it matches the deleted id.
+
+   Browse mode (`App.svelte`) stays as-is — `scheduleRefresh()` on any event reconciles deletes for free.
+9. **Docs** — update `api.md` SSE section, `data-model.md` store surface + invariant 5, and the Step 7 note here.
+
+### Decisions made beyond the spec
+
+- **Extract `resolveWatchRoot`.** The inline `find(...)` is now used in two places and the unit test for it pins down the sibling-prefix bug class.
+- **No debounce on deletes.** Chokidar's `unlink` is typically a single deterministic event per file; the file is gone, there's nothing to coalesce, and the spec explicitly says react immediately.
+- **No new field on the event payload.** Per the bullet above.
+- **`invalidateStructure` added even though only the delete path needs it.** Symmetry with `invalidateDocStats`; future cache flushes get a hook without re-touching `structure.ts`.
+
+### Verification recipe
+
+**Vitest (pure helpers):**
+
+```powershell
+npm test
+```
+
+Adds tests for the extracted `resolveWatchRoot`. Existing 33 tests must stay green.
+
+**Manual (browser):**
+
+1. `npm run dev`. Open http://localhost:5173, switch to Live Monitor.
+2. Pick a real class + assignment that has at least one student card.
+3. Note one student's card; click it so it's selected (right panel shows their metrics).
+4. In Windows Explorer, delete (or move out of the watch root) the `.docx` file that backs that card.
+5. **Expected:** within ~3 seconds the card disappears from the grid, the metrics panel switches back to the class summary, and the server log prints a single `Deleted: [...] <student> — <assignment> / <filename>` line.
+6. Repeat without first selecting — card just disappears.
+7. Switch to Browse mode, delete another file; **expected:** the debounced refresh removes the row from the sidebar within ~1 s of the SSE event.
+8. Confirm `curl -N http://127.0.0.1:8765/api/events` (separate terminal) shows a `submission-deleted` event with `id`, `student`, `assignment`, `watch_root_label` populated.
+
+### Definition of done
+
+- [ ] `AppEvent` union extended on both server and client; type-exhaustive switch in `AssignmentMonitor.handleEvent`.
+- [ ] `SubmissionStore.deleteById` lands + is referenced from `watcher.ts` only.
+- [ ] `resolveWatchRoot` extracted + has its own `*.test.ts`.
+- [ ] `invalidateDocStats(id)` and `invalidateStructure(id)` both called on delete.
+- [ ] Server logs a `Deleted: ...` line mirroring the existing `New <kind>:` line.
+- [ ] `api.md`, `data-model.md`, and this file all reflect the new event + method.
+- [ ] `npm run typecheck` and `npm test` both green; test count goes from 33 → 33 + N (where N covers `resolveWatchRoot`).
+- [ ] Manual recipe above produces the card-disappears-within-3-seconds behaviour.
 
 ---
 

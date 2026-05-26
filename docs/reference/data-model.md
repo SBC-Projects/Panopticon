@@ -56,7 +56,24 @@ CREATE INDEX idx_submissions_kind       ON submissions(kind);
 2. `kind` is fixed per watch root (every Submitted-files watch root produces `kind='submitted'`; every Working-files watch root produces `kind='working'`).
 3. `status = 'new'` ⇔ the row was inserted or its `last_modified_at` changed since the last "mark seen".
 4. The same `(student, assignment, watch_root_label)` tuple **can** have multiple rows — students often save multiple files, and may have both a working and a submitted version.
-5. No row is ever deleted by the watcher. Stale files just stop updating. (Manual `DELETE FROM submissions` is fine for dev.)
+5. **The watcher deletes a row when chokidar fires `unlink`** for that file. The deletion is permanent — if the file reappears the next `add` event will re-insert it with a fresh `first_seen_at`. (Polling fallback only inserts/updates; it never deletes, because it can't tell "file gone forever" from "file temporarily out of sync".)
+
+---
+
+## Store surface (`SubmissionStore`)
+
+Public methods exposed by `server/src/db.ts`. Keep this table in sync when you add or rename one.
+
+| Method | Returns | Used by |
+|--------|---------|---------|
+| `upsertFromFile(watchRoot, label, kind, absolutePath, parsed, mtime, size)` | `{ isNew: boolean }` — `isNew` is true on insert OR on content change of a previously-seen row | `watcher.ts` (add/change), `scanner.ts` (boot scan) |
+| `list(filters?)` | `Submission[]` ordered `last_modified_at DESC`; filters AND-ed | `routes.ts` (submissions + responses endpoints), `roster.ts` |
+| `getById(id)` | `Submission \| undefined` | `routes.ts`, `preview.ts` |
+| `deleteById(id)` | `Submission \| undefined` — returns the deleted snapshot (so the caller can build an event payload before the row is gone), or `undefined` when no row matched | `watcher.ts` (chokidar `unlink` handler) |
+| `markAllSeen()` | `number` of rows flipped from `new` to `seen` | `routes.ts` `POST /api/submissions/mark-seen` |
+| `markSeen(id)` | `void` | `routes.ts` `POST /api/submissions/:id/mark-seen` |
+| `getSummary()` | `Summary` — see [`api.md`](./api.md#get-apisummary) | `routes.ts` `GET /api/summary` |
+| `close()` | `void` | `index.ts` shutdown |
 
 ---
 

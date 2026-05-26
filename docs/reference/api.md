@@ -254,17 +254,27 @@ Client wrapper: `subscribeToEvents` in [`src/lib/api.ts`](../../src/lib/api.ts).
 Current event union:
 
 ```ts
-type AppEvent = {
-  type: "submission-changed";
-  id: string;
-  kind: "submitted" | "working";
-  student: string;
-  assignment: string;
-  filename: string;
-  watch_root_label: string;
-  last_modified_at: string;
-};
+type AppEvent =
+  | {
+      type: "submission-changed";
+      id: string;
+      kind: "submitted" | "working";
+      student: string;
+      assignment: string;
+      filename: string;
+      watch_root_label: string;
+      last_modified_at: string;
+    }
+  | {
+      type: "submission-deleted";
+      id: string;
+      student: string;
+      assignment: string;
+      watch_root_label: string;
+    };
 ```
+
+`submission-deleted` fires when chokidar's `unlink` event removes a tracked file. The row is dropped from SQLite before the event is emitted, so the client should reconcile by removing any row whose `submission_id === event.id`. There's no `kind` on this variant — match by id is unambiguous, and a delete event always implies "this exact submission is gone" regardless of the current `kind` filter. No `filename` / `last_modified_at` either; clients don't need them post-delete.
 
 When adding a new event type:
 

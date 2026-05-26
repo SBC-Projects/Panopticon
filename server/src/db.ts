@@ -173,6 +173,20 @@ export class SubmissionStore {
       .get(id) as Submission | undefined;
   }
 
+  /**
+   * Remove a row and return the snapshot of what was deleted, so the caller
+   * (typically the watcher's `unlink` handler) can build an event payload
+   * before the row is gone. Returns `undefined` when no row matched —
+   * which is the common case for files we were never tracking
+   * (lock files, OneDrive sidecars, etc.).
+   */
+  deleteById(id: string): Submission | undefined {
+    const existing = this.getById(id);
+    if (!existing) return undefined;
+    this.db.prepare("DELETE FROM submissions WHERE id = ?").run(id);
+    return existing;
+  }
+
   markAllSeen(): number {
     const result = this.db
       .prepare("UPDATE submissions SET status = 'seen' WHERE status = 'new'")

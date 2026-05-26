@@ -187,7 +187,21 @@ export interface SubmissionChangedEvent {
   last_modified_at: string;
 }
 
-export type AppEvent = SubmissionChangedEvent;
+/**
+ * Emitted when a watched file disappears from disk. Mirrors the server
+ * variant in `server/src/events.ts`. Clients reconcile by `id` —
+ * `student` / `assignment` / `watch_root_label` are carried so callers
+ * can cheaply filter without an id lookup first.
+ */
+export interface SubmissionDeletedEvent {
+  type: "submission-deleted";
+  id: string;
+  student: string;
+  assignment: string;
+  watch_root_label: string;
+}
+
+export type AppEvent = SubmissionChangedEvent | SubmissionDeletedEvent;
 
 /**
  * Subscribe to live file-change events from the watcher. Returns a cleanup function.

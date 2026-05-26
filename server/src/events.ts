@@ -11,7 +11,22 @@ export interface SubmissionChangedEvent {
   last_modified_at: string;
 }
 
-export type AppEvent = SubmissionChangedEvent;
+/**
+ * Emitted when a watched file disappears from disk. Carries only the
+ * minimum the client needs to reconcile: the deleted submission id plus
+ * the (class, assignment, student) tuple for cheap filtering before the
+ * id match. No `kind` — clients match by `submission_id`, which is
+ * already kind-unique.
+ */
+export interface SubmissionDeletedEvent {
+  type: "submission-deleted";
+  id: string;
+  student: string;
+  assignment: string;
+  watch_root_label: string;
+}
+
+export type AppEvent = SubmissionChangedEvent | SubmissionDeletedEvent;
 
 export type EventListener = (event: AppEvent) => void;
 

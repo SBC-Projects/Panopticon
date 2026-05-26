@@ -118,11 +118,26 @@
   }
 
   function handleEvent(event: AppEvent) {
-    if (event.type !== "submission-changed") return;
     if (event.watch_root_label !== selectedClass) return;
     if (event.assignment !== selectedAssignment) return;
-    if (selectedKind && event.kind !== selectedKind) return;
-    void refreshOneByStudent(event.student);
+    if (event.type === "submission-changed") {
+      if (selectedKind && event.kind !== selectedKind) return;
+      void refreshOneByStudent(event.student);
+      return;
+    }
+    if (event.type === "submission-deleted") {
+      // Match by id — the row was uniquely tracking this file. If it was
+      // selected, also clear selection so the metrics panel falls back to
+      // the class summary instead of pointing at a vanished row.
+      const idx = responses.findIndex(
+        (r) => r.submission_id === event.id
+      );
+      if (idx < 0) return;
+      if (selectedSubmissionId === event.id) selectedSubmissionId = null;
+      const next = responses.slice();
+      next.splice(idx, 1);
+      responses = next;
+    }
   }
 
   // Refetch responses when selection changes.

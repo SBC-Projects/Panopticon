@@ -88,6 +88,11 @@ function uniqueSlug(text: string, seen: Map<string, number>): string {
   return count === 0 ? base : `${base}-${count + 1}`;
 }
 
+/** Drop a single entry (e.g. when a file is deleted). Mirrors `invalidateDocStats`. */
+export function invalidateStructure(submissionId: string): void {
+  cache.delete(submissionId);
+}
+
 /**
  * Augment mammoth's HTML output so heading tags carry a deterministic
  * `data-heading-id` matching the structure endpoint. Used by DocPreview to

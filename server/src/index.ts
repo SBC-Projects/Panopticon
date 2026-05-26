@@ -49,11 +49,21 @@ async function main(): Promise<void> {
     });
   }
 
-  const watcher = new SubmissionWatcher(config, store, events, (info) => {
-    console.log(
-      `New ${info.kind}: [${info.watch_root_label}] ${info.student} — ${info.assignment} / ${info.filename}`
-    );
-  });
+  const watcher = new SubmissionWatcher(
+    config,
+    store,
+    events,
+    (info) => {
+      console.log(
+        `New ${info.kind}: [${info.watch_root_label}] ${info.student} — ${info.assignment} / ${info.filename}`
+      );
+    },
+    (row) => {
+      console.log(
+        `Deleted: [${row.watch_root_label}] ${row.student} — ${row.assignment} / ${row.filename}`
+      );
+    }
+  );
   watcher.start();
 
   const { host, port } = config.server;

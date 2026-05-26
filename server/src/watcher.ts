@@ -1,10 +1,12 @@
 import chokidar from "chokidar";
 import fs from "node:fs";
 import path from "node:path";
-import type { AppConfig, WatchRoot } from "./types.js";
+import type { AppConfig, Submission, WatchRoot } from "./types.js";
 import { parseSubmissionPath, submissionId } from "./parser.js";
 import type { SubmissionStore } from "./db.js";
 import type { EventBus } from "./events.js";
+import { invalidateDocStats } from "./metrics.js";
+import { invalidateStructure } from "./structure.js";
 
 export type OnNewSubmission = (info: {
   id: string;
@@ -16,6 +18,23 @@ export type OnNewSubmission = (info: {
   last_modified_at: string;
 }) => void;
 
+export type OnDeletedSubmission = (row: Submission) => void;
+
+/**
+ * Find which configured watch root, if any, owns `filePath`. A file owns a
+ * watch root iff it is the root itself OR sits inside it (the `+ path.sep`
+ * guard prevents the classic sibling-prefix bug — `…/Submitted files (copy)`
+ * must not match `…/Submitted files`).
+ */
+export function resolveWatchRoot(
+  watchRoots: readonly WatchRoot[],
+  filePath: string
+): WatchRoot | undefined {
+  return watchRoots.find(
+    (r) => filePath === r.path || filePath.startsWith(r.path + path.sep)
+  );
+}
+
 export class SubmissionWatcher {
   private watcher: ReturnType<typeof chokidar.watch> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -25,7 +44,8 @@ export class SubmissionWatcher {
     private config: AppConfig,
     private store: SubmissionStore,
     private events: EventBus,
-    private onNew?: OnNewSubmission
+    private onNew?: OnNewSubmission,
+    private onDeleted?: OnDeletedSubmission
   ) {}
 
   start(): void {
@@ -56,6 +76,7 @@ export class SubmissionWatcher {
 
     this.watcher.on("add", handler);
     this.watcher.on("change", handler);
+    this.watcher.on("unlink", (filePath) => this.processDelete(filePath));
 
     if (this.config.poll_fallback_seconds > 0) {
       this.pollTimer = setInterval(
@@ -98,10 +119,7 @@ export class SubmissionWatcher {
     }
     if (!stat.isFile()) return;
 
-    const root = this.config.watch_roots.find(
-      (r) =>
-        filePath === r.path || filePath.startsWith(r.path + path.sep)
-    );
+    const root = resolveWatchRoot(this.config.watch_roots, filePath);
     if (!root) return;
 
     const parsed = parseSubmissionPath(root.path, filePath);
@@ -131,6 +149,42 @@ export class SubmissionWatcher {
       this.events.emit({ type: "submission-changed", ...payload });
       this.onNew?.(payload);
     }
+  }
+
+  /**
+   * React to a chokidar `unlink` event. Not debounced — the file is already
+   * gone, there's nothing to coalesce. Cancels any pending edit-debounce for
+   * the same path so a save-as-replace (unlink + add) doesn't briefly delete
+   * the row before re-inserting it.
+   */
+  private processDelete(filePath: string): void {
+    const pendingTimer = this.debounceTimers.get(filePath);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      this.debounceTimers.delete(filePath);
+    }
+
+    const root = resolveWatchRoot(this.config.watch_roots, filePath);
+    if (!root) return;
+
+    const parsed = parseSubmissionPath(root.path, filePath);
+    if (!parsed) return;
+
+    const id = submissionId(root.path, parsed.relative_path);
+    const deleted = this.store.deleteById(id);
+    if (!deleted) return;
+
+    invalidateDocStats(id);
+    invalidateStructure(id);
+
+    this.events.emit({
+      type: "submission-deleted",
+      id: deleted.id,
+      student: deleted.student,
+      assignment: deleted.assignment,
+      watch_root_label: deleted.watch_root_label,
+    });
+    this.onDeleted?.(deleted);
   }
 
   private pollAll(): void {
