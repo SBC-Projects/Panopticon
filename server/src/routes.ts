@@ -300,7 +300,7 @@ export function createRouter(
  * `store.list` returns rows ordered by `last_modified_at DESC`, so the first
  * row we see for a given (student, ext) is the latest.
  */
-function pickLatestPerStudent(rows: Submission[]): Submission[] {
+export function pickLatestPerStudent(rows: Submission[]): Submission[] {
   const latestDocx = new Map<string, Submission>();
   const latestAny = new Map<string, Submission>();
   for (const row of rows) {

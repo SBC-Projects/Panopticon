@@ -354,6 +354,31 @@ Resolved with defaults on 2026-05-26 (override anytime — these are easy to fli
 
 ---
 
+## 5.5 Follow-up tests
+
+### `pickLatestPerStudent` unit coverage (2026-05-26)
+
+`pickLatestPerStudent` (Step 3, in `server/src/routes.ts`) is a pure rollup helper but had zero unit tests — every regression so far has had to be caught by spotting wrong cards in the browser. Add Vitest coverage so the contract is locked down.
+
+**Extraction decision.** Keep the helper inside `server/src/routes.ts` and just `export` it. Rationale: it's ~15 lines, has a single consumer in this file, and a dedicated `rollup.ts` for one function adds a new module without removing complexity. Importing `routes.ts` from a co-located `routes.test.ts` is fine — top-level side effects in `routes.ts` and its transitive imports (`db.ts`, `config.ts`, `roster.ts`) are pure module loads; nothing opens the DB or reads config until classes are instantiated. If a second rollup helper appears later, that's the right moment to split into `rollup.ts`.
+
+**Test file.** `server/src/routes.test.ts` — matching the `parser.test.ts` / `structure.test.ts` / `metrics.test.ts` style: file-header comment explaining the module and why these tests exist, `describe` per behaviour group, minimal inline `Submission` fixtures, `it.each` where it reads cleanly.
+
+**Cases covered.**
+
+1. One student with one `.docx` → that row chosen.
+2. One student with multiple `.docx` ordered DESC by `last_modified_at` (matching `SubmissionStore.list`) → the first `.docx` in input order wins.
+3. One student with `.docx` + a newer `.pdf` → `.docx` still wins (extension preference beats recency).
+4. One student with only `.pdf` rows → latest `.pdf` chosen.
+5. Multiple students mixed in one input → exactly one row per student in output.
+6. Empty input → empty output.
+
+Plus a small extra case for the input-order contract (`.docx` ordering with reversed input) to make the "respects DESC ordering" invariant explicit.
+
+**Constraints.** Don't refactor the helper's behaviour — only `export` it. No new dependencies. Don't touch unrelated parts of `routes.ts`.
+
+---
+
 ## 6. Definition of done
 
 The Live Monitor feature is complete when:
