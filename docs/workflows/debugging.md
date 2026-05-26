@@ -12,20 +12,26 @@ How to run, log, and inspect Panopticon while developing. Pair with [`testing.md
 npm run dev
 ```
 
-Two coloured streams print to one terminal:
-- `server` — the Express + watcher process on `:8765`.
-- `web` — Vite on `:5173`. This is the URL you open in the browser; it proxies `/api` to `:8765`.
+This runs [`scripts/dev.mjs`](../../scripts/dev.mjs), a tiny Node orchestrator that **sequences** the two halves rather than launching them in parallel:
+
+1. Starts the server (`npm run dev:server` → `tsx watch server/src/index.ts`).
+2. Waits for the server to print `Panopticon API: http://...` — that line fires from inside `app.listen()`'s callback in [`server/src/index.ts`](../../server/src/index.ts), so it's a tight signal for "HTTP + SSE are bound".
+3. Only then starts Vite (`npm run dev:web` → `vite`).
+
+Two coloured streams print to one terminal, with each line prefixed by its origin:
+- `[server]` (blue) — Express + watcher process on `:8765`.
+- `[web]` (green) — Vite on `:5173`. This is the URL you open in the browser; it proxies `/api` to `:8765`.
+- `[dev]` (grey) — the orchestrator's own status lines (`starting server…`, `server is up — starting Vite…`).
 
 `tsx` runs the server with no build step, so any `.ts` change restarts it. Vite hot-reloads the UI without a refresh in most cases.
 
-The server binds within ~5 seconds on a freshly-restarted machine; the OneDrive scan then runs **in the background** and populates rows over SSE. Brief `ECONNREFUSED` spam from Vite during the first second or two is normal. See [`../architecture.md#boot-sequence`](../architecture.md#boot-sequence).
+The server binds within ~5 seconds on a freshly-restarted machine, Vite starts immediately after, and the OneDrive scan then runs **in the background** without blocking either. See [`../architecture.md#boot-sequence`](../architecture.md#boot-sequence). The `ECONNREFUSED` spam that the old parallel-launch setup used to produce is gone because Vite doesn't start until the API is reachable.
 
-**If `npm run dev` hangs at the SQLite warning past ~30 s** (server side never prints `Panopticon API:`), it's almost always vite + tsx-watch contending on Windows file I/O while the OneDrive watch roots are being set up. Two reliable workarounds:
+**Ctrl-C is safe.** On Windows the orchestrator walks the full child process tree with `taskkill /T /F` so `tsx watch` and `vite` don't leave grandchildren around to lock `data/panopticon.db` or hold `:8765` in TIME_WAIT. If you ever do find a stray `node.exe` (e.g. left over from a hard kill in a different worktree), `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -match 'tsx|server/src/index|vite' }` then `Stop-Process -Force` will clear it.
 
-- Run the two halves in separate terminals: `npm run dev:server` in one, `npm run dev:web` in another. Same code paths, none of the I/O contention. The server side typically binds in 5–10 s.
-- Or be patient with `npm run dev` — it does come up eventually (sometimes 60–90 s). Do **not** Ctrl-C; that just leaves orphan `tsx watch` processes and OneDrive locks on `data/panopticon.db`, making the next run even slower.
+**If you want to run just one half** (e.g. to focus on server logs without Vite noise, or to debug Vite without an active watcher), the underlying scripts are still wired up — see *Server only* below and the `dev:web` script in `package.json`. The orchestrator is a convenience over those, not a wrapper they live inside.
 
-If the server has hung for minutes, kill any stray `node.exe` processes (`Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -match 'tsx|server/src/index' }` then `Stop-Process -Force`) before retrying.
+**If the orchestrator times out waiting for the bind line** (it'll print `server didn't print "Panopticon API:" within 60s — starting Vite anyway` and start Vite regardless), the server child is wedged. Check its log lines for `EADDRINUSE` (something else holds `:8765`) or `config.yaml not found`, fix the underlying issue, and re-run.
 
 ### Server only
 
