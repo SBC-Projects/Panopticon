@@ -85,9 +85,14 @@ git pull --ff-only
 # 3. Create the worktree + branch in one command. If the branch name
 #    already exists locally or on origin, suffix '-2', '-3', etc.
 git worktree add -b <prefix>/<kebab-name> ..\Panopticon-<purpose> main
+
+# 4. Open the new worktree in a fresh Cursor window. Requires `cursor` on
+#    PATH (Command Palette -> "Shell Command: Install 'cursor' command in
+#    PATH" if missing). Path needs quotes because of the "My Apps" space.
+cursor "..\Panopticon-<purpose>"
 ```
 
-Then **stop and ask the user to relaunch you inside the new worktree** (open `..\Panopticon-<purpose>` as a Cursor workspace or new window). Don't try to continue from the main checkout — Cursor's working directory is fixed for the session.
+Then **stop and ask the user to switch focus to the new Cursor window** that just opened (or to open `..\Panopticon-<purpose>` manually via File → Open Folder if the `cursor` launch failed) and re-invoke `/new-agent` there with `resume <branch>`. Don't try to continue from the main checkout — Cursor's working directory is fixed for the session and you can't reach into the new window's chat from here.
 
 ### If you were launched inside an existing worktree
 
