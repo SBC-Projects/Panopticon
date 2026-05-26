@@ -322,6 +322,8 @@ If `git worktree remove` complains about untracked files in the worktree, decide
 
 After removal, your shell's current directory is gone. Your next command must `cd <main-path>` or use `git -C <main-path>` for subsequent steps. Cursor will probably also lose its working directory binding — that's expected; the session is wrapping up anyway.
 
+> **Windows + Cursor gotcha.** If a Cursor window is open on the worktree when you run `git worktree remove`, Windows file locks will block at least one of the deletes. Symptom: the worktree's folder gets emptied or partially emptied, but the `.git/worktrees/<purpose>/` metadata pointer survives, so `git worktree list` still shows the worktree (sometimes as `(prunable)` or with a missing path). **Tell the user to close the Cursor window holding the worktree before you run the remove command.** If you've already hit it, ask the user to close the window, then re-run `git -C <main-path> worktree remove --force ..\Panopticon-<purpose>` (or `git -C <main-path> worktree prune` to drop the dangling pointer). Don't try to delete the `.git/worktrees/...` directory by hand.
+
 ### 8b. Delete the branch
 
 ```powershell
@@ -359,6 +361,7 @@ End the session with a short status to the user:
 - **Pushing while tests are running in another window.** Wait for the run to finish.
 - **Updating dependencies as part of a feature commit.** Dep bumps belong in their own `chore:` commit.
 - **Deleting the branch before removing the worktree.** Order matters — `git branch -d` refuses while a worktree holds the branch.
+- **Running `git worktree remove` while a Cursor window still has the worktree open (Windows).** The file locks leave the worktree half-deleted and `git worktree list` showing a phantom entry. Ask the user to close the window first. See Step 8a.
 
 ---
 
