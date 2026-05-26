@@ -12,5 +12,11 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["server/**/*.ts", "src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]
+  "include": [
+    "server/**/*.ts",
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
 }
