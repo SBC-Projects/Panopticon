@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { parseHeadings, injectHeadingIds } from "./structure.js";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import JSZip from "jszip";
+import {
+  parseHeadings,
+  injectHeadingIds,
+  getStructure,
+  invalidateStructure,
+} from "./structure.js";
 
 /**
  * `structure` extracts h1-h3 headings out of mammoth's HTML output and
@@ -7,6 +16,10 @@ import { parseHeadings, injectHeadingIds } from "./structure.js";
  * to a heading without a second roundtrip. The two functions share a
  * slug algorithm — the ids they produce for the same HTML MUST match,
  * otherwise scroll-sync silently breaks.
+ *
+ * `getStructure` also handles `.pptx`: every slide becomes one
+ * `{id: "slide-N", level: 1, text: title}` entry so the Question
+ * dropdown is populated uniformly across docx and pptx assignments.
  */
 
 describe("parseHeadings", () => {
@@ -94,5 +107,60 @@ describe("injectHeadingIds", () => {
   it("leaves empty headings unchanged", () => {
     const html = `<h1></h1>`;
     expect(injectHeadingIds(html)).toBe(html);
+  });
+});
+
+describe("getStructure — .pptx", () => {
+  /**
+   * The pptx branch goes file → jszip → extractPptxSlideTitles → map to
+   * `Heading`. The mapping shape is what the client depends on:
+   *   - id is `slide-<index>`
+   *   - level is always 1 (the Question dropdown indents by level)
+   *   - text is the title placeholder, or `Slide N` fallback
+   * Cover both placeholder-present and placeholder-absent on one deck so
+   * the fallback path is exercised in the integration test, not just the
+   * pure pptx.test.ts unit.
+   */
+  it("returns one slide-<n> heading per slide for a real .pptx on disk", async () => {
+    const tmp = path.join(
+      os.tmpdir(),
+      `panopticon-structure-pptx-${Date.now()}-${Math.random().toString(36).slice(2)}.pptx`
+    );
+    const zip = new JSZip();
+    zip.file(
+      "ppt/slides/slide1.xml",
+      `<?xml version="1.0"?><p:sld xmlns:p="x" xmlns:a="y"><p:cSld><p:spTree>
+        <p:sp>
+          <p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>
+          <p:txBody><a:p><a:r><a:t>Welcome</a:t></a:r></a:p></p:txBody>
+        </p:sp>
+      </p:spTree></p:cSld></p:sld>`
+    );
+    zip.file(
+      "ppt/slides/slide2.xml",
+      `<?xml version="1.0"?><p:sld xmlns:p="x" xmlns:a="y"><p:cSld><p:spTree>
+        <p:sp><p:txBody><a:p><a:r><a:t>body, no title placeholder</a:t></a:r></a:p></p:txBody></p:sp>
+      </p:spTree></p:cSld></p:sld>`
+    );
+    await fs.writeFile(
+      tmp,
+      Buffer.from(await zip.generateAsync({ type: "nodebuffer" }))
+    );
+    try {
+      const stat = await fs.stat(tmp);
+      const headings = await getStructure(
+        "pptx-structure-test",
+        tmp,
+        ".pptx",
+        stat.mtime.toISOString()
+      );
+      expect(headings).toEqual([
+        { id: "slide-1", level: 1, text: "Welcome" },
+        { id: "slide-2", level: 1, text: "Slide 2" },
+      ]);
+    } finally {
+      await fs.unlink(tmp).catch(() => {});
+      invalidateStructure("pptx-structure-test");
+    }
   });
 });

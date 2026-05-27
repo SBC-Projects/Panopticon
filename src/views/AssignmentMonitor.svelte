@@ -98,10 +98,12 @@
   async function loadHeadings() {
     headings = [];
     selectedHeading = "";
-    // Skip roster placeholders — they have no real submission_id to fetch.
-    const representative = responses.find(
-      (r) => r.extension === ".docx" && r.submission_id
-    );
+    // Prefer .pptx (slide titles are reliably present from layout
+    // placeholders) over .docx (heading styles often aren't applied).
+    // Skip roster placeholders — they have no real submission_id.
+    const representative =
+      responses.find((r) => r.extension === ".pptx" && r.submission_id) ??
+      responses.find((r) => r.extension === ".docx" && r.submission_id);
     if (!representative) return;
     const ticket = fetchSeq;
     try {

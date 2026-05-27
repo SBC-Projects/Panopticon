@@ -7,6 +7,8 @@ import type { SubmissionStore } from "./db.js";
 import type { EventBus } from "./events.js";
 import { invalidateDocStats } from "./metrics.js";
 import { invalidateStructure } from "./structure.js";
+import { invalidatePptxCache } from "./pptx-render.js";
+import { warmPptxIfChanged } from "./pptx-warm.js";
 
 export type OnNewSubmission = (info: {
   id: string;
@@ -125,7 +127,7 @@ export class SubmissionWatcher {
     const parsed = parseSubmissionPath(root.path, filePath);
     if (!parsed) return;
 
-    const { isNew } = this.store.upsertFromFile(
+    const { isNew, contentChanged } = this.store.upsertFromFile(
       root.path,
       root.label,
       root.kind,
@@ -135,8 +137,9 @@ export class SubmissionWatcher {
       stat.size
     );
 
-    if (isNew) {
-      const id = submissionId(root.path, parsed.relative_path);
+    const id = submissionId(root.path, parsed.relative_path);
+
+    if (contentChanged) {
       const payload = {
         id,
         student: parsed.student,
@@ -147,7 +150,18 @@ export class SubmissionWatcher {
         last_modified_at: stat.mtime.toISOString(),
       };
       this.events.emit({ type: "submission-changed", ...payload });
-      this.onNew?.(payload);
+      if (isNew) this.onNew?.(payload);
+
+      warmPptxIfChanged(
+        {
+          id,
+          filename: parsed.filename,
+          absolute_path: filePath,
+          last_modified_at: stat.mtime.toISOString(),
+          size_bytes: stat.size,
+        },
+        true
+      );
     }
   }
 
@@ -176,6 +190,8 @@ export class SubmissionWatcher {
 
     invalidateDocStats(id);
     invalidateStructure(id);
+    // Cheap no-op for non-pptx ids (force:true on a missing dir).
+    invalidatePptxCache(id);
 
     this.events.emit({
       type: "submission-deleted",

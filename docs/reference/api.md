@@ -202,9 +202,20 @@ Renders a single submission for the preview pane.
 // PDF / image / other binary
 { "type": "binary", "mime": "application/pdf", "last_modified_at": "…" }
 
+// .pptx — one entry per slide, served from data/pptx-cache/<id>/
+{ "type": "slides",
+  "slides": [
+    { "index": 1, "title": "Welcome", "image_path": "/api/preview/abc123/slide/1" },
+    { "index": 2, "title": "Agenda",  "image_path": "/api/preview/abc123/slide/2" }
+  ],
+  "last_modified_at": "…" }
+
 // .docx with no extractable text (mirrors excerpt_status above)
 { "type": "empty", "reason": "not_downloaded", "message": "OneDrive hasn't downloaded this file yet …", "last_modified_at": "…" }
 { "type": "empty", "reason": "empty_body",     "message": "This document doesn't contain any text yet. …", "last_modified_at": "…" }
+
+// .pptx where PowerPoint COM rendering isn't available (no Office, non-Windows, etc.)
+{ "type": "empty", "reason": "render_unavailable", "message": "PowerPoint rendering unavailable on this machine. …", "last_modified_at": "…" }
 
 // Unsupported extension
 { "type": "unsupported", "message": "…", "last_modified_at": "…" }
@@ -213,7 +224,24 @@ Renders a single submission for the preview pane.
 { "type": "error", "message": "…", "last_modified_at": "…" }
 ```
 
-`.docx` HTML is post-processed by `injectHeadingIds` so headings carry `data-heading-id` matching the structure endpoint. The `empty` variant exists so the client can render a helpful "what to do" panel (with a "Re-check file" button) instead of the generic error path.
+`.docx` HTML is post-processed by `injectHeadingIds` so headings carry `data-heading-id` matching the structure endpoint. `.pptx` previews are rendered by PowerPoint COM (driven from `scripts/render-pptx-slides.ps1`), cached on disk under `data/pptx-cache/<id>/`. The server pre-warms that cache in the background when a `.pptx` is discovered or changes (boot scan + file watcher); repeat preview loads are typically <100 ms. If the file changed since the last render, the API may return the previous slide images immediately while a fresh render runs (stale-while-revalidate). When COM is unavailable the response carries the `render_unavailable` empty-state; while a first-time render is still queued you may see `render_pending`. Text excerpts and slide titles still come through the pure-JS path in `server/src/pptx.ts`, so cards and the Question dropdown keep working. The `empty` variant exists so the client can render a helpful "what to do" panel (with a "Re-check file" button) instead of the generic error path.
+
+### `GET /api/preview/:id/slide/:n`
+
+Per-slide PNG for `.pptx` previews. Streamed from `data/pptx-cache/<id>/slide-NNN.png`. Path parameters: `id` is the submission id; `n` is 1-indexed.
+
+| Response | When |
+|----------|------|
+| `200 image/png` stream | Slide image exists on disk. |
+| `400 { error }` | `n` not a positive integer. |
+| `404 { error }` | Submission unknown, or slide index out of range / deck not rendered. |
+
+Headers on success:
+
+- `Content-Type: image/png`
+- `Cache-Control: public, max-age=31536000, immutable`
+
+The URL is content-immutable; the client appends `?v=<last_modified_at>` for cache-busting (see `slideUrl` in [`src/lib/api.ts`](../../src/lib/api.ts)). Editing the deck changes its `last_modified_at`, which changes the `v=` query, which forces a fresh fetch — and the server-side render cache is invalidated by the new `(mtime, size)` pair on the next `/api/preview/:id` call.
 
 ### `GET /api/file/:id`
 

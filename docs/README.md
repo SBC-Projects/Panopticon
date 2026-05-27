@@ -35,6 +35,7 @@ End-users looking for setup/usage instructions: see [`how-to-use.md`](./how-to-u
 | Feature surface | Doc |
 |-----------------|-----|
 | Assignment-centric live monitor view (Class → Assignment → wall of student cards + metrics, SSE-driven) | [`features/live-monitor.md`](./features/live-monitor.md) |
+| `.pptx` support: word count + excerpt + slide-title dropdown + PowerPoint COM per-slide image rendering | [`features/powerpoint-support.md`](./features/powerpoint-support.md) |
 
 > When a new feature ships, **add a row here** and a new file under [`features/`](./features) using [`features/_template.md`](./features/_template.md). That's how the routing scales.
 

@@ -33,12 +33,28 @@ export interface Summary {
   }[];
 }
 
+/**
+ * One rendered slide inside a `.pptx` preview. `image_path` is a
+ * server-relative URL like `/api/preview/<id>/slide/<n>`; clients
+ * append `?v=<last_modified_at>` for cache-busting via `slideUrl`.
+ */
+export interface SlideRef {
+  index: number;
+  title: string;
+  image_path: string;
+}
+
 export type PreviewResponse =
   | { type: "html"; html: string; last_modified_at: string }
   | { type: "binary"; mime: string; last_modified_at: string }
+  | { type: "slides"; slides: SlideRef[]; last_modified_at: string }
   | {
       type: "empty";
-      reason: "not_downloaded" | "empty_body";
+      reason:
+        | "not_downloaded"
+        | "empty_body"
+        | "render_unavailable"
+        | "render_pending";
       message: string;
       last_modified_at: string;
     }
@@ -86,6 +102,16 @@ export async function fetchPreview(id: string): Promise<PreviewResponse> {
 
 export function fileUrl(id: string): string {
   return `${API}/file/${id}`;
+}
+
+/**
+ * Build a cache-busting URL for one rendered pptx slide. Pair with a
+ * `SlideRef.image_path` returned by the preview endpoint. The `v=`
+ * query forces a reload when the source deck changes; without it the
+ * server's `Cache-Control: immutable` would stick.
+ */
+export function slideUrl(imagePath: string, mtime: string): string {
+  return `${imagePath}?v=${encodeURIComponent(mtime)}`;
 }
 
 export async function openInApp(id: string): Promise<void> {

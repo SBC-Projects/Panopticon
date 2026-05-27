@@ -278,6 +278,7 @@ Each step is independently mergeable. Don't start step N+1 with step N broken.
 - Client: when responses arrive, the monitor view fetches the structure of **one representative** docx (the first row with `extension === ".docx"`) to populate the Question dropdown.
 - `DocPreview.svelte` accepts an optional `scrollToHeading?: string` prop. A `$effect` queries `[data-heading-id="..."]` (with `CSS.escape`) and calls `scrollIntoView({ behavior: "smooth" })`.
 - **Limitation not yet addressed:** `StudentResponseCard` currently shows only a plain-text excerpt (not the full HTML), so `selectedHeading` is captured in `SelectionBar` and plumbed through but **does not currently scroll the cards themselves**. It's wired ready for the next iteration — either (a) cards switch to a mini HTML preview with `scrollToHeading`, or (b) a new endpoint returns text scoped to a specific heading. The full `DocPreview` (used in Browse mode) is already heading-aware.
+- **`.pptx` extension (2026-05-27):** the Question dropdown also handles PowerPoint decks. Slide titles populate the dropdown as `{id: "slide-N", level: 1, text: title}`; `AssignmentMonitor.loadHeadings` prefers `.pptx` over `.docx` for the representative submission because slide titles come from layout placeholders and are far more reliably present than docx Heading-styled paragraphs. See [`powerpoint-support.md`](./powerpoint-support.md).
 
 ### Step 10 — Phase 3 placeholders → real (out of scope for this guide)
 

@@ -294,7 +294,8 @@
   /* Constrain the embedded preview-html block so it scrolls inside the
      modal body rather than blowing past it. Overrides the app.css default
      calc(100vh - 12rem) which was sized for Browse mode. */
-  .preview :global(.preview-html) {
+  .preview :global(.preview-html),
+  .preview :global(.preview-slides) {
     max-height: calc(90vh - 14rem);
   }
 
