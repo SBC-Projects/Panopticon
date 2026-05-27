@@ -14,8 +14,16 @@
     type SubmissionKind,
     type Summary,
   } from "$lib/api";
+  import { closeInspector } from "$lib/inspectorOpen.svelte";
   type Mode = "browse" | "monitor";
   let mode = $state<Mode>("browse");
+
+  function setMode(next: Mode) {
+    if (next === "browse") {
+      closeInspector();
+    }
+    mode = next;
+  }
 
   let summary = $state<Summary | null>(null);
   let submissions = $state<Submission[]>([]);
@@ -158,24 +166,22 @@
       </p>
     </div>
     <div class="header-actions">
-      <div class="mode-toggle" role="tablist" aria-label="View mode">
+      <div class="mode-toggle" role="group" aria-label="View mode">
         <button
           type="button"
-          role="tab"
-          aria-selected={mode === "browse"}
+          aria-pressed={mode === "browse"}
           class="mode-btn"
           class:active={mode === "browse"}
-          onclick={() => (mode = "browse")}
+          onclick={() => setMode("browse")}
         >
           Browse
         </button>
         <button
           type="button"
-          role="tab"
-          aria-selected={mode === "monitor"}
+          aria-pressed={mode === "monitor"}
           class="mode-btn"
           class:active={mode === "monitor"}
-          onclick={() => (mode = "monitor")}
+          onclick={() => setMode("monitor")}
         >
           Live Monitor
         </button>
@@ -327,6 +333,9 @@
     gap: 1rem;
     margin-bottom: 1.25rem;
     flex-wrap: wrap;
+    /* Stay above the response inspector backdrop (z-index 100). */
+    position: relative;
+    z-index: 110;
   }
 
   .header h1 {
