@@ -461,6 +461,123 @@ Adds tests for the extracted `resolveWatchRoot`. Existing 33 tests must stay gre
 
 ---
 
+## 4.7 Phase 3 — Response-inspector modal (planned, 2026-05-27)
+
+The grid + right-rail metrics work great for "scan the wall", but the rail can't show the actual document the student wrote — only a 4-line excerpt on the card. Browse mode has full `DocPreview`, but switching modes loses the live grid context (selected class/assignment/filter, who's editing right now, the "live" pulse animations).
+
+Goal: clicking a student card opens a **modal overlay** with the full `DocPreview` for that student's file plus a compact metrics column, without leaving the Live Monitor view. The grid stays mounted under the modal so the live state is preserved; SSE updates continue to patch cards underneath.
+
+### Goal (one paragraph)
+
+In Live Monitor, clicking any non-placeholder student card opens a centered modal showing (a) the full `DocPreview` for that submission — same mammoth HTML, same stale-guard / silent-reload / heading-scroll behaviour Browse mode already gives us — and (b) a slim metrics column to the right of the preview with the same Phase 1 metrics the right rail shows. Esc / X / backdrop click closes. The grid + right rail underneath are untouched; closing returns the teacher to exactly the state they were in.
+
+### Non-goals
+
+- No new endpoints, no new server-side caches, no schema changes. The modal is a pure client recomposition of state that's already on `StudentResponse` plus the existing `/api/preview/:id` route.
+- No new top-level dependencies (per `conventions.md`).
+- No replacement of the right-rail `MetricsPanel`. Both surfaces show metrics; the rail keeps working for "I want to see numbers without dimming the grid".
+- No edit affordances. This is read-only inspection plus "Open in Word" (already in `DocPreview`).
+- No multi-doc tabs inside the modal. One student, one file at a time (the latest-per-student already chosen by `pickLatestPerStudent`).
+- No URL / deep-link for the inspector. There's no router in the app and we're not adding one.
+
+### Gap analysis vs current code
+
+| Surface | Today | Needed |
+|---------|-------|--------|
+| `src/components/DocPreview.svelte` | Accepts `submission: Submission \| null`, handles initial-load / silent-reload / mammoth-HTML / binary / empty / unsupported / error variants, scrolls to heading via `data-heading-id`. | **No change.** Used verbatim. The component already covers everything the modal needs. |
+| `src/components/MetricRow.svelte` | Single label/value row used inside `MetricsPanel`. | **No change.** Reused inside the modal's metrics column. |
+| `src/components/StudentResponseCard.svelte` | Clickable `.card` with `data-submission-id`; roster placeholders non-interactive. Jump-to-draft button excluded from open. | **Shipped.** Document router in `inspectClickRouter.ts` opens the inspector. |
+| `src/components/ResponseInspectorModal.svelte` | — | Modal container. Synthesises a `Submission`-shaped object from `StudentResponse` + `watchRootLabel`, mounts `<DocPreview>` plus a metrics column. Esc / X / backdrop close. |
+| `src/lib/inspectorOpen.svelte.ts` | — | `openInspector` / `closeInspector` — imperative `mount()` on `document.body`. |
+| `src/lib/monitorContext.svelte.ts` | — | `syncMonitorGrid()` — grid rows + class label for the inspector, updated synchronously when `AssignmentMonitor` loads/patches. |
+| `src/views/AssignmentMonitor.svelte` | `selectedSubmissionId` for right rail. SSE patches into `responses`. | `commitResponses()` calls `syncMonitorGrid`. Listens for `panopticon-inspect` to set rail selection when Inspect opens. Closes inspector when row vanishes or filters change. |
+| `src/lib/api.ts` `Submission` interface | 13 fields including `relative_path` and `absolute_path`. | **No change.** `DocPreview` only reads `id`, `student`, `kind`, `assignment`, `filename`, `watch_root_label`, `last_modified_at`. The modal synthesises a `Pick<Submission, …>`-shaped object containing those fields plus stubs (`""`) for `relative_path` / `absolute_path` to satisfy the typed `submission` prop. |
+| Roster placeholders (`excerpt_status === "not_submitted"`, `submission_id === ""`) | Card already early-returns on click. | **No change.** Modal never opens for these. |
+| `submission-deleted` SSE event for the inspected row | Removes the row from `responses`. | Falls out automatically: deriving `inspectorResponse` from `responses` + `inspectorSubmissionId` means the modal auto-closes when its row vanishes. No special handler needed. |
+
+### Modal shape (decided in the previous session)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  ●  Emma Wilson    DRAFT                                    [×]  │   header
+│     Essay.docx · 7 Digital Tech / Week 3 homework                │
+├──────────────────────────────────────────┬───────────────────────┤
+│                                          │  Words written  847   │
+│   <mammoth HTML, scrollable>             │  Time since edit 12s  │
+│                                          │  File size       24 KB│
+│   (the full DocPreview, including its    │  Kind           DRAFT │
+│    own internal "Open in Word /          │  First seen   9:14 AM │
+│    Refresh" buttons, heading scroll,     │  Status          new  │
+│    empty-state messaging, etc.)          │                       │
+│                                          │  ── Coming soon ──    │
+│                                          │  (placeholder rows)   │
+│                                          │                       │
+└──────────────────────────────────────────┴───────────────────────┘
+```
+
+- Backdrop: full-viewport `rgba(0,0,0,0.55)`.
+- Modal: `max-width: min(1100px, 95vw)`, `max-height: 90vh`, centered. The grid below remains mounted (CSS `position: fixed; inset: 0`).
+- Two-column body via CSS grid: preview takes `1fr`, metrics takes `minmax(220px, 280px)`. Single column under `max-width: 800px` (metrics stack above preview).
+- Close affordances: top-right `[×]` button, Esc keydown, click on backdrop (but not on the modal body).
+
+### Behaviour
+
+- **Open.** Click any non-placeholder student card. `inspectClickRouter.ts` calls `openInspector(id)`; rail selection updates via `panopticon-inspect` event.
+- **Close.** Esc / X / backdrop → `closeInspector()` unmounts the modal. Right-rail `selectedSubmissionId` is preserved.
+- **Auto-close.** `AssignmentMonitor` calls `closeInspector()` when the open row leaves `responses` (class/assignment change, delete, kind filter).
+- **Live updates while open.** Grid rows update via SSE; the mounted modal keeps props from open time. Close and re-open Inspect to refresh preview/metrics after a save. _(Future: remount or reactive props on row patch.)_
+- **Body scroll.** Set `document.body.style.overflow = "hidden"` while the modal is open; restore on close. Use a `$effect` returning the cleanup.
+- **Focus.** Move focus to the close button on open; restore focus to the previously focused element on close. (Cheap focus management — no full focus trap; the modal is read-only and pressing Tab inside is fine.)
+- **Accessibility.** `role="dialog"`, `aria-modal="true"`, `aria-labelledby` pointing at the student name in the header.
+
+### Step-by-step plan
+
+Each step compiles and runs on its own. Run `npm run typecheck` after each before moving on.
+
+1. **Add `ResponseInspectorModal.svelte`.** ✅ DONE (2026-05-27) — `src/components/ResponseInspectorModal.svelte` lands as a standalone presentational component:
+   - Props: `response: StudentResponse | null`, `watchRootLabel: string`, `onClose: () => void`.
+   - Renders nothing when `response === null` (top-level `{#if response && submission}`).
+   - Synthesises a `Submission`-shape object via `$derived` from `response` + `watchRootLabel`; passes to `<DocPreview>`. `relative_path` / `absolute_path` are stubbed with empty strings — `DocPreview` reads only `id`, `student`, `kind`, `assignment`, `filename`, `watch_root_label`, `last_modified_at`.
+   - Metrics column uses `<MetricRow>` directly (Phase 1: Words written, Time since edit, File size, Kind, First seen, Status; plus the same four Phase 3 placeholders the rail shows). Skips the `MetricsPanel` outer chrome to avoid duplicating the student name / kind badge / "Open in Word" already rendered by `DocPreview`'s header.
+   - Esc handled via `window.addEventListener("keydown", …)` inside a single `$effect` that also locks body scroll, focuses the close button (`queueMicrotask` to land after mount), and restores both on cleanup.
+   - Backdrop click filters via `e.target === e.currentTarget` so only the scrim itself closes — clicks inside the dialog body don't bubble through.
+   - **Deviation:** added a small `:global(.preview-html)` override inside the modal's `<style>` to cap the embedded preview at `calc(90vh - 14rem)`. The default in `app.css` is `calc(100vh - 12rem)`, sized for Browse mode's full-viewport layout; in the modal that lets the HTML overflow past the close button. Scoped override avoids touching the global token.
+2. **Wire open/close path.** ✅ DONE (2026-05-27)
+   - `src/lib/inspectorOpen.svelte.ts` — imperative `mount(ResponseInspectorModal)` on `document.body`.
+   - `src/lib/monitorContext.svelte.ts` — `syncMonitorGrid()` called from `commitResponses()` in `AssignmentMonitor`.
+   - `src/lib/inspectClickRouter.ts` — document listener on `.card` clicks (not roster placeholders; not jump-to-draft).
+   - **Deviation:** original plan used `{#if}` in `AssignmentMonitor`; imperative `mount()` on `document.body` is the shipped approach.
+3. **Manual verification.** ✅ DONE (2026-05-27) — user confirmed modal opens from grid cards in browser.
+4. **Typecheck + tests.** ✅ DONE (2026-05-27) — `npm run typecheck`, `npm test` (51/51), and `npm run build` (1.83 s, 77.35 kB JS / 16.25 kB CSS) all green after the wire-up. No new pure helpers fell out; the `Submission`-shape synthesis is a 13-field literal inside a `$derived`, not worth extracting + testing in isolation.
+5. **Doc updates.** ✅ DONE (2026-05-27, this edit). No invalidation of §4's gap-analysis table (the modal is new surface, not a contradiction of prior steps). §6 unchanged — the modal doesn't address the open heading-scroll-in-cards limitation from Step 9.
+
+### Verification recipe
+
+Run `npm run dev`, switch to Live Monitor, pick a class + assignment with at least one student card showing. Then:
+
+1. Click a student card whose `.docx` has content. **Expected:** centered modal over a dimmed backdrop; full preview + metrics column.
+2. Press Esc. **Expected:** modal closes; right rail still shows that student (selection set when the card opened the inspector).
+3. Click the same card again. **Expected:** modal reopens.
+4. Open the modal, then click the dimmed backdrop outside the dialog. **Expected:** modal closes. Click inside the dialog body — nothing happens.
+5. Open the modal, click the `[×]` button. **Expected:** modal closes.
+6. With the modal open, change `Class` or `Assignment` in the selection bar. **Expected:** modal disappears automatically (the inspected row is no longer in `responses`).
+7. With the modal open, edit the `.docx` in Word and save. **Expected:** grid row updates via SSE; close and click the card again to refresh modal content.
+8. With the modal open, delete the `.docx` from disk. **Expected:** within ~3 s the modal closes (`closeInspector` when row removed).
+9. Roster placeholder (`NO SUBMISSION`). **Expected:** card not clickable; no modal.
+10. Open the modal and Tab around. **Expected:** focus starts on the close button; subsequent Tabs move through the close button → preview action buttons → metrics. There's no full focus trap, but it's read-only content so this is fine.
+
+### Definition of done
+
+- [x] `ResponseInspectorModal.svelte` — modal with `<DocPreview>` + metrics column (2026-05-27).
+- [x] Esc / X / backdrop close; body scroll locked while open.
+- [x] Card click opens modal for non-placeholder cards; roster placeholders not clickable.
+- [x] Modal closes when inspected row leaves `responses` (class, assignment, delete, filter).
+- [x] `npm run typecheck` and `npm test` green.
+- [x] No new top-level dependencies, endpoints, or schema change.
+- [x] This section updated with shipped deviations (imperative mount).
+
+---
+
 ## 5. Open product decisions
 
 Resolved with defaults on 2026-05-26 (override anytime — these are easy to flip).
@@ -511,3 +628,10 @@ The Live Monitor feature is complete when:
 - [x] All new fields on API responses are `snake_case`.
 - [x] This doc updated to reflect any deviations from the plan.
 - [x] Phase 2 (roster + empty-state messaging + draft-elsewhere pointer) shipped. See §4.5.
+- [x] Response inspector modal (§4.7): card click opens full `DocPreview` + metrics overlay.
+
+---
+
+## Changelog
+
+- **2026-05-27** — §4.7 response inspector shipped: `ResponseInspectorModal`, imperative `mount()` via `inspectorOpen.svelte.ts`, `syncMonitorGrid` + document card-click router. Dev ergonomics: sequenced `scripts/dev.mjs` for `npm run dev`, worktree-safe `vite.config.ts` (`strictPort`, absolute `projectRoot`). UI overlays guidance added to `docs/new-agent.md` and `docs/conventions.md`.

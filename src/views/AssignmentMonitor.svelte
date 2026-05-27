@@ -14,6 +14,16 @@
     type AppEvent,
   } from "$lib/api";
   import { activityState, now } from "$lib/metrics.svelte";
+  import { onMount } from "svelte";
+  import {
+    INSPECT_EVENT,
+    type InspectEventDetail,
+  } from "$lib/inspectClickRouter";
+  import {
+    closeInspector as closeInspectorState,
+    inspectorOpen,
+  } from "$lib/inspectorOpen.svelte";
+  import { syncMonitorGrid } from "$lib/monitorContext.svelte";
 
   interface Props {
     summary: Summary | null;
@@ -38,11 +48,19 @@
    *  late-arriving fetches can be discarded if they're no longer relevant. */
   let fetchSeq = 0;
 
+  function commitResponses(next: StudentResponse[]) {
+    responses = next;
+    syncMonitorGrid(selectedClass, next);
+  }
+
   async function loadResponses(opts: { keepSelection?: boolean } = {}) {
     if (!selectedClass || !selectedAssignment) {
-      responses = [];
+      commitResponses([]);
       headings = [];
-      if (!opts.keepSelection) selectedSubmissionId = null;
+      if (!opts.keepSelection) {
+        selectedSubmissionId = null;
+        closeInspectorState();
+      }
       return;
     }
 
@@ -56,12 +74,18 @@
         selectedKind || undefined
       );
       if (ticket !== fetchSeq) return;
-      responses = list;
+      commitResponses(list);
       if (
         selectedSubmissionId &&
         !list.some((r) => r.submission_id === selectedSubmissionId)
       ) {
         selectedSubmissionId = null;
+      }
+      if (
+        inspectorOpen.submission_id &&
+        !list.some((r) => r.submission_id === inspectorOpen.submission_id)
+      ) {
+        closeInspectorState();
       }
     } catch (e) {
       if (ticket !== fetchSeq) return;
@@ -106,10 +130,12 @@
       if (idx >= 0) {
         const next = responses.slice();
         next[idx] = updated;
-        responses = next;
+        commitResponses(next);
       } else {
-        responses = [...responses, updated].sort((a, b) =>
-          a.student.localeCompare(b.student)
+        commitResponses(
+          [...responses, updated].sort((a, b) =>
+            a.student.localeCompare(b.student)
+          )
         );
       }
     } catch {
@@ -134,9 +160,10 @@
       );
       if (idx < 0) return;
       if (selectedSubmissionId === event.id) selectedSubmissionId = null;
+      if (inspectorOpen.submission_id === event.id) closeInspectorState();
       const next = responses.slice();
       next.splice(idx, 1);
-      responses = next;
+      commitResponses(next);
     }
   }
 
@@ -217,11 +244,15 @@
     };
   });
 
-  function handleSelect(submissionId: string) {
-    if (!submissionId) return; // ignore roster placeholders
-    selectedSubmissionId =
-      selectedSubmissionId === submissionId ? null : submissionId;
-  }
+  // Sync right-rail selection when a card opens the inspector.
+  onMount(() => {
+    const onInspect = (e: Event) => {
+      const { submission_id } = (e as CustomEvent<InspectEventDetail>).detail;
+      selectedSubmissionId = submission_id;
+    };
+    window.addEventListener(INSPECT_EVENT, onInspect);
+    return () => window.removeEventListener(INSPECT_EVENT, onInspect);
+  });
 
   /** Switch view to the student's draft/turned-in copy in the opposite kind.
    *  We set the submission id first so the existing post-load reconciler
@@ -262,8 +293,7 @@
   <section class="grid-pane">
     <StudentResponseGrid
       responses={filteredResponses}
-      selectedId={selectedSubmissionId}
-      onSelect={handleSelect}
+      selectedId={selectedSubmissionId ?? inspectorOpen.submission_id}
       onJumpToDraft={handleJumpToDraft}
       {loading}
       empty={emptyMessage}
@@ -305,4 +335,5 @@
     background: rgba(248, 113, 113, 0.15);
     border: 1px solid rgba(248, 113, 113, 0.4);
   }
+
 </style>
