@@ -43,6 +43,19 @@
   let selectedSubmissionId = $state<string | null>(null);
 
   let headings = $state<Heading[]>([]);
+  let headingsLoading = $state(false);
+
+  // Reset headings when the assignment changes so the Question dropdown and
+  // any downstream scroll targeting never points at a stale structure list.
+  let prevAssignment: string | undefined = undefined;
+  $effect(() => {
+    const a = selectedAssignment;
+    if (prevAssignment !== undefined && a !== prevAssignment) {
+      headings = [];
+      selectedHeading = "";
+    }
+    prevAssignment = a;
+  });
 
   /** Bumped every time the user-selected (class, assignment, kind) changes, so
    *  late-arriving fetches can be discarded if they're no longer relevant. */
@@ -96,8 +109,8 @@
   }
 
   async function loadHeadings() {
-    headings = [];
-    selectedHeading = "";
+    if (headingsLoading) return;
+    headingsLoading = true;
     // Prefer .pptx (slide titles are reliably present from layout
     // placeholders) over .docx (heading styles often aren't applied).
     // Skip roster placeholders — they have no real submission_id.
@@ -112,6 +125,8 @@
       headings = list;
     } catch {
       // headings are best-effort; ignore failures
+    } finally {
+      if (ticket === fetchSeq) headingsLoading = false;
     }
   }
 
@@ -180,7 +195,7 @@
   // When responses settle, refresh structure if needed.
   $effect(() => {
     void responses.length;
-    if (responses.length > 0 && headings.length === 0) {
+    if (responses.length > 0 && headings.length === 0 && !headingsLoading) {
       void loadHeadings();
     } else if (responses.length === 0) {
       headings = [];
@@ -275,17 +290,41 @@
         ? "Pick an assignment to see student responses."
         : "No matching student responses for this filter."
   );
+
+  /** Assignments for the currently selected class only (derived here so it
+   *  stays in sync with `selectedClass` state owned by this view). */
+  const assignmentOptions = $derived.by(() => {
+    const cls = selectedClass;
+    if (!cls) return [];
+    const names = new Set<string>();
+    for (const row of summary?.assignments ?? []) {
+      if (row.watch_root_label === cls) names.add(row.assignment);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  });
+
+  function handleClassChange(next: string) {
+    if (next === selectedClass) return;
+    selectedClass = next;
+    selectedAssignment = "";
+    selectedHeading = "";
+    closeInspectorState();
+  }
 </script>
 
-<SelectionBar
-  {summary}
-  {headings}
-  bind:selectedClass
-  bind:selectedAssignment
-  bind:selectedHeading
-  bind:selectedKind
-  bind:studentSearch
-/>
+{#key selectedClass}
+  <SelectionBar
+    {summary}
+    {headings}
+    {selectedClass}
+    {assignmentOptions}
+    onClassChange={handleClassChange}
+    bind:selectedAssignment
+    bind:selectedHeading
+    bind:selectedKind
+    bind:studentSearch
+  />
+{/key}
 
 {#if error}
   <div class="banner error">{error}</div>

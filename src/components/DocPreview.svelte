@@ -14,9 +14,15 @@
     submission: Submission | null;
     /** Optional: scroll the preview to a heading id (set on h1–h3 via data-heading-id). */
     scrollToHeading?: string | null;
+    /** When false, hide the student/meta header (e.g. inspector modal supplies its own). */
+    showHeader?: boolean;
   }
 
-  let { submission, scrollToHeading = null }: Props = $props();
+  let {
+    submission,
+    scrollToHeading = null,
+    showHeader = true,
+  }: Props = $props();
 
   let previewHtmlEl: HTMLDivElement | null = $state(null);
 
@@ -163,29 +169,45 @@
     <p>Select a submission to preview</p>
   </div>
 {:else}
-  <div class="preview-header">
-    <div>
-      <h2>
-        {submission.student}
-        <span class="kind-badge kind-{submission.kind}">
-          {submission.kind === "working" ? "DRAFT" : "TURNED IN"}
-        </span>
+  {#if showHeader}
+    <div class="preview-header">
+      <div>
+        <h2>
+          {submission.student}
+          <span class="kind-badge kind-{submission.kind}">
+            {submission.kind === "working" ? "DRAFT" : "TURNED IN"}
+          </span>
+          {#if silentReloading}
+            <span class="status-pill reloading">syncing…</span>
+          {:else if justUpdated}
+            <span class="status-pill updated">updated</span>
+          {/if}
+        </h2>
+        <p class="meta">{submission.assignment} · {submission.filename}</p>
+        <p class="meta muted">
+          {submission.watch_root_label} · modified {formatDate(submission.last_modified_at)}
+        </p>
+      </div>
+      <div class="actions">
+        <button type="button" onclick={handleOpen}>{openAppLabel}</button>
+        <button type="button" onclick={manualRefresh}>Refresh</button>
+      </div>
+    </div>
+  {:else}
+    <div class="preview-toolbar">
+      <div class="toolbar-status">
         {#if silentReloading}
           <span class="status-pill reloading">syncing…</span>
         {:else if justUpdated}
           <span class="status-pill updated">updated</span>
         {/if}
-      </h2>
-      <p class="meta">{submission.assignment} · {submission.filename}</p>
-      <p class="meta muted">
-        {submission.watch_root_label} · modified {formatDate(submission.last_modified_at)}
-      </p>
+      </div>
+      <div class="actions">
+        <button type="button" onclick={handleOpen}>{openAppLabel}</button>
+        <button type="button" onclick={manualRefresh}>Refresh</button>
+      </div>
     </div>
-    <div class="actions">
-      <button type="button" onclick={handleOpen}>{openAppLabel}</button>
-      <button type="button" onclick={manualRefresh}>Refresh</button>
-    </div>
-  </div>
+  {/if}
 
   {#if initialLoading}
     <div class="preview-loading" role="status" aria-live="polite">
@@ -269,12 +291,23 @@
     color: var(--muted);
   }
 
-  .preview-header {
+  .preview-header,
+  .preview-toolbar {
     display: flex;
     justify-content: space-between;
     gap: 1rem;
     margin-bottom: 1rem;
     flex-wrap: wrap;
+  }
+
+  .preview-toolbar {
+    align-items: center;
+  }
+
+  .toolbar-status {
+    display: flex;
+    align-items: center;
+    min-height: 1.5rem;
   }
 
   .preview-header h2 {

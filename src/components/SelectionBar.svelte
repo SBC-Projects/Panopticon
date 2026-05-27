@@ -4,6 +4,8 @@
   interface Props {
     summary: Summary | null;
     selectedClass: string;
+    assignmentOptions: string[];
+    onClassChange: (cls: string) => void;
     selectedAssignment: string;
     selectedHeading: string;
     selectedKind: "" | SubmissionKind;
@@ -13,7 +15,9 @@
 
   let {
     summary,
-    selectedClass = $bindable(),
+    selectedClass,
+    assignmentOptions,
+    onClassChange,
     selectedAssignment = $bindable(),
     selectedHeading = $bindable(),
     selectedKind = $bindable(),
@@ -23,30 +27,17 @@
 
   const classOptions = $derived(summary?.by_class.map((c) => c.label) ?? []);
 
-  const assignmentOptions = $derived(
-    (summary?.assignments ?? [])
-      .filter((a) => !selectedClass || a.watch_root_label === selectedClass)
-      .map((a) => a.assignment)
-      .filter((a, i, arr) => arr.indexOf(a) === i)
-      .sort()
-  );
-
-  function onClassChange() {
-    if (
-      selectedAssignment &&
-      !assignmentOptions.includes(selectedAssignment)
-    ) {
-      selectedAssignment = "";
-    }
+  function handleClassSelect(e: Event) {
+    onClassChange((e.currentTarget as HTMLSelectElement).value);
   }
 </script>
 
 <div class="selection-bar">
   <label class="field">
     <span class="label">Class</span>
-    <select bind:value={selectedClass} onchange={onClassChange}>
+    <select value={selectedClass} onchange={handleClassSelect}>
       <option value="">— Select class —</option>
-      {#each classOptions as cls}
+      {#each classOptions as cls (cls)}
         <option value={cls}>{cls}</option>
       {/each}
     </select>
@@ -54,19 +45,27 @@
 
   <label class="field">
     <span class="label">Assignment</span>
-    <select bind:value={selectedAssignment} disabled={!selectedClass}>
-      <option value="">— Select assignment —</option>
-      {#each assignmentOptions as a}
-        <option value={a}>{a}</option>
-      {/each}
-    </select>
+    {#key selectedClass}
+      <select
+        value={selectedAssignment}
+        onchange={(e) => {
+          selectedAssignment = (e.currentTarget as HTMLSelectElement).value;
+        }}
+        disabled={!selectedClass}
+      >
+        <option value="">— Select assignment —</option>
+        {#each assignmentOptions as a (a)}
+          <option value={a}>{a}</option>
+        {/each}
+      </select>
+    {/key}
   </label>
 
   <label class="field">
     <span class="label">Question</span>
     <select bind:value={selectedHeading} disabled={headings.length === 0}>
       <option value="">— Whole document —</option>
-      {#each headings as h}
+      {#each headings as h (h.id)}
         <option value={h.id}>
           {"".padStart((h.level - 1) * 2, "·")}
           {h.text}

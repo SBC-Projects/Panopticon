@@ -17,9 +17,10 @@
      *  `Submission`-shaped object so we can reuse `DocPreview` verbatim. */
     watchRootLabel: string;
     onClose: () => void;
+    onNavigate: (delta: -1 | 1) => void;
   }
 
-  let { response, watchRootLabel, onClose }: Props = $props();
+  let { response, watchRootLabel, onClose, onNavigate }: Props = $props();
 
   let closeBtn: HTMLButtonElement | null = $state(null);
 
@@ -58,6 +59,16 @@
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        onNavigate(-1);
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        onNavigate(1);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -102,23 +113,41 @@
             </span>
           </h2>
           <p class="meta muted">
-            {response.assignment} · {watchRootLabel}
+            {response.filename} · {response.assignment} · {watchRootLabel}
           </p>
         </div>
-        <button
-          type="button"
-          class="close"
-          aria-label="Close inspector"
-          bind:this={closeBtn}
-          onclick={onClose}
-        >
-          ×
-        </button>
+        <div class="head-actions">
+          <button
+            type="button"
+            class="nav"
+            aria-label="Previous student"
+            onclick={() => onNavigate(-1)}
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            class="nav"
+            aria-label="Next student"
+            onclick={() => onNavigate(1)}
+          >
+            ›
+          </button>
+          <button
+            type="button"
+            class="close"
+            aria-label="Close inspector"
+            bind:this={closeBtn}
+            onclick={onClose}
+          >
+            ×
+          </button>
+        </div>
       </header>
 
       <div class="body">
         <section class="preview">
-          <DocPreview {submission} />
+          <DocPreview {submission} showHeader={false} />
         </section>
 
         <aside class="metrics">
@@ -250,6 +279,14 @@
     border-color: rgba(251, 191, 36, 0.4);
   }
 
+  .head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+  }
+
+  .nav,
   .close {
     background: transparent;
     border: 1px solid transparent;
@@ -265,6 +302,7 @@
     justify-content: center;
   }
 
+  .nav:hover,
   .close:hover {
     color: var(--text);
     border-color: var(--border);
