@@ -47,7 +47,13 @@ export interface SlideRef {
 export type PreviewResponse =
   | { type: "html"; html: string; last_modified_at: string }
   | { type: "binary"; mime: string; last_modified_at: string }
-  | { type: "slides"; slides: SlideRef[]; last_modified_at: string }
+  | {
+      type: "slides";
+      slides: SlideRef[];
+      slides_cache: "fresh" | "stale";
+      slides_cache_key: string;
+      last_modified_at: string;
+    }
   | {
       type: "empty";
       reason:
@@ -110,8 +116,8 @@ export function fileUrl(id: string): string {
  * query forces a reload when the source deck changes; without it the
  * server's `Cache-Control: immutable` would stick.
  */
-export function slideUrl(imagePath: string, mtime: string): string {
-  return `${imagePath}?v=${encodeURIComponent(mtime)}`;
+export function slideUrl(imagePath: string, cacheKey: string): string {
+  return `${imagePath}?v=${encodeURIComponent(cacheKey)}`;
 }
 
 export async function openInApp(id: string): Promise<void> {
