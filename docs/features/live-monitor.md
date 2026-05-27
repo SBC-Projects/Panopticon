@@ -633,6 +633,67 @@ The Live Monitor feature is complete when:
 
 ---
 
+## 7. Live Monitor UI fixes (2026-05-27)
+
+**Branch:** `fix/live-monitor-ui`  
+**Worktree:** `..\Panopticon-live-monitor-ui`
+
+### Goal
+
+Fix three Live Monitor UX issues reported in the field:
+
+1. **Class → Assignment cascade** — changing class leaves the assignment dropdown showing the previous class's assignments (or keeps a stale assignment selected).
+2. **Inspector duplicate header** — the response modal repeats student/kind/class info already rendered by `DocPreview`.
+3. **Student cycling in the modal** — Left/Right arrow keys (and on-screen prev/next controls) move to the next/previous student without closing the modal.
+
+### Non-goals
+
+- No API or DB changes.
+- No changes to Browse mode preview header.
+- No new dependencies.
+- Question-selector scroll-to-heading in the modal (unchanged; still Browse-only for full-doc scroll).
+
+### Assumptions
+
+- When the teacher changes class, **assignment and question reset** every time (even if the assignment name happens to match in the new class). Predictable beats sticky.
+- Arrow navigation follows the **current grid order** (`monitorContext.responses` as last synced by `AssignmentMonitor`, i.e. the same order as the visible cards before search filtering). Roster placeholders without a `submission_id` are skipped (not openable today).
+- Navigation **wraps** at the ends (last → first, first → last).
+
+### Step-by-step plan
+
+**Step 1 — Reset assignment when class changes** ✅ DONE (2026-05-27), fixed (2026-05-27)
+
+- **First attempt:** `$effect` + `{#key selectedClass}` inside `SelectionBar` — still showed the previous class's assignment options in the field (bindable/`$derived` split across parent/child).
+- **Shipped fix:** `AssignmentMonitor` owns `selectedClass` and derives `assignmentOptions` there; class `<select>` uses `value` + `onchange` → `handleClassChange()` (reads DOM value, clears assignment/question, closes inspector). `SelectionBar` receives `assignmentOptions` as a prop; assignment `<select>` is controlled + `{#key selectedClass}`.
+
+**Step 2 — Single header in the inspector** ✅ DONE (2026-05-27)
+
+- `DocPreview.svelte`: optional `showHeader` prop (default `true`). When `false`, renders a slim `.preview-toolbar` with Open/Refresh + sync status pills only.
+- `ResponseInspectorModal.svelte`: passes `showHeader={false}`; modal header keeps student meta + prev/next + close.
+
+**Step 3 — Prev/next student navigation** ✅ DONE (2026-05-27)
+
+- `inspectorOpen.svelte.ts`: `navigateInspector(±1)` walks `monitorContext.responses` submission ids (skips empty), wraps, remounts modal, syncs rail via `dispatchInspectSelection`.
+- `inspectEvents.ts`: shared `INSPECT_EVENT` + dispatch helper (avoids circular import with `inspectClickRouter`).
+- `ResponseInspectorModal.svelte`: `ArrowLeft` / `ArrowRight` + ‹ › header buttons call `onNavigate`.
+
+### Definition of done (this slice)
+
+- [x] Steps 1–3 implemented.
+- [x] `npm run typecheck` and `npm test` pass.
+- [x] Browser recipe below passes in Chrome/Edge (not only Simple Browser).
+- [x] This section updated with completion notes.
+
+### Verification recipe
+
+1. `npm run dev`. Live Monitor → pick class + assignment with ≥3 students with files.
+2. Click a card → modal opens with **one** header block (student meta in modal only; preview shows toolbar with Open/Refresh).
+3. Press `→` three times → three different students, modal stays open; metrics rail selection follows.
+4. Change class → assignment dropdown shows only the new class's options and selection is blank.
+
+---
+
 ## Changelog
 
 - **2026-05-27** — §4.7 response inspector shipped: `ResponseInspectorModal`, imperative `mount()` via `inspectorOpen.svelte.ts`, `syncMonitorGrid` + document card-click router. Dev ergonomics: sequenced `scripts/dev.mjs` for `npm run dev`, worktree-safe `vite.config.ts` (`strictPort`, absolute `projectRoot`). UI overlays guidance added to `docs/new-agent.md` and `docs/conventions.md`.
+- **2026-05-27** — §7 shipped on `fix/live-monitor-ui`: class/assignment cascade reset, inspector header dedup (`showHeader`), modal prev/next navigation. Follow-up: fixed `loadHeadings`/`$effect` infinite loop (`effect_update_depth_exceeded`) when switching class/assignment.

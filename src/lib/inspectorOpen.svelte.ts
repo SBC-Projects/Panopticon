@@ -1,10 +1,17 @@
 import { mount, unmount } from "svelte";
 import ResponseInspectorModal from "../components/ResponseInspectorModal.svelte";
+import { dispatchInspectSelection } from "./inspectEvents";
 import { monitorContext } from "./monitorContext.svelte";
 
 export const inspectorOpen = $state({
   submission_id: null as string | null,
 });
+
+function inspectableIds(): string[] {
+  return monitorContext.responses
+    .map((r) => r.submission_id)
+    .filter((id) => id !== "");
+}
 
 let modalRoot: HTMLElement | null = null;
 let modalInstance: ReturnType<typeof mount> | null = null;
@@ -48,6 +55,24 @@ export function openInspector(submission_id: string): void {
       response,
       watchRootLabel: monitorContext.watch_root_label,
       onClose: closeInspector,
+      onNavigate: (delta: -1 | 1) => navigateInspector(delta),
     },
   });
+}
+
+/** Move to the previous/next inspectable student; wraps at the ends. */
+export function navigateInspector(delta: -1 | 1): void {
+  const ids = inspectableIds();
+  if (ids.length === 0) return;
+
+  const current = inspectorOpen.submission_id;
+  let idx = current ? ids.indexOf(current) : -1;
+  if (idx < 0) idx = 0;
+
+  const nextIdx = (idx + delta + ids.length) % ids.length;
+  const nextId = ids[nextIdx];
+  if (nextId === current) return;
+
+  openInspector(nextId);
+  dispatchInspectSelection(nextId);
 }

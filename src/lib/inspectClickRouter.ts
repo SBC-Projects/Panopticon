@@ -2,11 +2,10 @@
  * Document-level handler for student grid cards.
  * Opens the response inspector via imperative mount (see inspectorOpen.svelte.ts).
  */
+import { dispatchInspectSelection } from "./inspectEvents";
 import { openInspector } from "./inspectorOpen.svelte";
 
-export const INSPECT_EVENT = "panopticon-inspect";
-
-export type InspectEventDetail = { submission_id: string };
+export { INSPECT_EVENT, type InspectEventDetail } from "./inspectEvents";
 
 function cardFromTarget(target: EventTarget | null): HTMLElement | null {
   const el = target as HTMLElement | null;
@@ -22,13 +21,7 @@ function openFromCard(card: HTMLElement): void {
   if (!id) return;
 
   openInspector(id);
-
-  window.dispatchEvent(
-    new CustomEvent<InspectEventDetail>(INSPECT_EVENT, {
-      detail: { submission_id: id },
-      bubbles: true,
-    })
-  );
+  dispatchInspectSelection(id);
 }
 
 function handleDocumentClick(e: MouseEvent): void {
