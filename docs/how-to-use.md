@@ -69,6 +69,14 @@ $env:PANOPTICON_STUDENT_WORK_ROOT = "C:/Users/<you>/OneDrive - <org>/Panopticon"
 
 Leave `watch_roots: []` to let Panopticon discover every `* - Student Work` folder under that root. Or list them manually if you want to ignore some.
 
+**Sharing one config across git worktrees.** `config.yaml` is gitignored, so a new worktree starts without one. Set `PANOPTICON_CONFIG` to an absolute path and every worktree will load that file:
+
+```powershell
+[Environment]::SetEnvironmentVariable("PANOPTICON_CONFIG", "C:\Users\<you>\Documents\My Apps\Panopticon\config.yaml", "User")
+```
+
+Open a new PowerShell after setting it. An individual worktree's own `config.yaml` is still preferred if one exists — useful for testing config changes in isolation.
+
 ### 2.4 Install dependencies
 
 From the project folder:
@@ -198,7 +206,7 @@ Stop the server (Ctrl-C). Delete `data/panopticon.db`. Start the server again. P
 
 ## 7. Configuration reference
 
-`config.yaml` (gitignored — your machine, your settings).
+`config.yaml` (gitignored — your machine, your settings). The server looks for it in the project root first, then falls back to `PANOPTICON_CONFIG` if that env var is set.
 
 | Key | Default | What it does |
 |-----|---------|--------------|
@@ -228,7 +236,7 @@ Relative paths resolve against `student_work_root` (or the project root if it is
 
 | Symptom | Try |
 |---------|-----|
-| `config.yaml not found` | Run `cp config.example.yaml config.yaml`, then re-run `npm run dev`. |
+| `config.yaml not found` | Run `cp config.example.yaml config.yaml`, then re-run `npm run dev`. Or set `PANOPTICON_CONFIG` to an existing config file. |
 | `No watch roots found` | Either set `student_work_root` to your OneDrive path, or add a `watch_roots:` entry manually. |
 | Dashboard is blank | Open DevTools → Console. Most often the API isn't running. Check the other terminal. |
 | Files aren't appearing | Click **Scan folders**. If still empty, confirm the file is actually on disk (not "online-only" in OneDrive). |

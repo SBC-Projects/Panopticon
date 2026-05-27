@@ -16,6 +16,25 @@ export function getProjectRoot(): string {
   return ROOT;
 }
 
+/**
+ * Resolve which config file to load. The worktree's own `config.yaml` wins
+ * if present (so a local copy still overrides for isolated testing). Otherwise
+ * fall back to PANOPTICON_CONFIG — useful for sharing one file across git
+ * worktrees, since `config.yaml` is gitignored and doesn't follow new branches.
+ */
+function resolveConfigPath(): string | null {
+  const local = path.join(ROOT, "config.yaml");
+  if (fs.existsSync(local)) return local;
+
+  const envConfig = process.env.PANOPTICON_CONFIG;
+  if (envConfig) {
+    const resolved = resolveUserPath(envConfig);
+    if (fs.existsSync(resolved)) return resolved;
+  }
+
+  return null;
+}
+
 /** Expand a leading "~" and resolve to an absolute path (relative to project root). */
 function resolveUserPath(p: string): string {
   let expanded = p;
@@ -26,11 +45,13 @@ function resolveUserPath(p: string): string {
 }
 
 export function loadConfig(): AppConfig {
-  const configPath = path.join(ROOT, "config.yaml");
-  if (!fs.existsSync(configPath)) {
+  const configPath = resolveConfigPath();
+  if (!configPath) {
+    const localPath = path.join(ROOT, "config.yaml");
     console.error(
-      `config.yaml not found at ${configPath}\n` +
-        `Copy config.example.yaml to config.yaml and edit paths to suit your machine.`
+      `config.yaml not found at ${localPath}\n` +
+        `Copy config.example.yaml to config.yaml and edit paths to suit your machine,\n` +
+        `or set PANOPTICON_CONFIG to a shared config file (handy for git worktrees).`
     );
     process.exit(1);
   }

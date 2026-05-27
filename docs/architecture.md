@@ -140,7 +140,7 @@ A poll fallback (`poll_fallback_seconds`, default 30) walks the watch roots peri
 | No auth | App is local-only. Only the teacher's browser can reach `127.0.0.1:8765`. |
 | No router | One view + a mode toggle. URLs aren't part of the UX. |
 | `data/panopticon.db` in repo root | Single file, easy to delete and re-scan. Gitignored. |
-| `config.yaml` gitignored, `config.example.yaml` checked in | Paths are machine-specific. |
+| `config.yaml` gitignored, `config.example.yaml` checked in | Paths are machine-specific. `PANOPTICON_CONFIG` env var points at a shared file so git worktrees don't each need their own copy. |
 | No CSS framework | The token system in `app.css` covers everything we need. Tailwind would be more bytes than logic. |
 
 If you want to overturn any of these, write a one-paragraph proposal first and ask the user.

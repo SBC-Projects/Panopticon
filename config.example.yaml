@@ -1,5 +1,8 @@
 # Copy to config.yaml and adjust paths, or leave watch_roots empty
 # to auto-detect "* - Student Work/{Submitted,Working} files" folders.
+#
+# Tip: set PANOPTICON_CONFIG to an absolute path if you want every git
+# worktree to share one config file instead of maintaining a copy each.
 
 # Optional: folder scanned for "* - Student Work" subfolders. Defaults to the
 # project root. Set this if the class folders live elsewhere (e.g. OneDrive).
