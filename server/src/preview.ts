@@ -20,7 +20,14 @@ export interface SlideRef {
 export type PreviewResult =
   | { type: "html"; html: string }
   | { type: "binary"; mime: string }
-  | { type: "slides"; slides: SlideRef[] }
+  | {
+      type: "slides";
+      slides: SlideRef[];
+      /** `stale` = older PNGs on disk while a background re-render runs. */
+      slides_cache: "fresh" | "stale";
+      /** Cache-buster for slide PNG URLs (`mtime:size` of the rendered manifest). */
+      slides_cache_key: string;
+    }
   | {
       type: "empty";
       reason:
@@ -179,7 +186,12 @@ async function buildPptxPreview(
     title,
     image_path: `/api/preview/${submission.id}/slide/${i + 1}`,
   }));
-  return { type: "slides", slides };
+  return {
+    type: "slides",
+    slides,
+    slides_cache: render.stale ? "stale" : "fresh",
+    slides_cache_key: `${render.manifest.mtime_iso}:${render.manifest.size_bytes}`,
+  };
 }
 
 export function getFileStream(submission: Submission): fs.ReadStream | null {

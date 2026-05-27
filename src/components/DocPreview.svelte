@@ -29,6 +29,9 @@
   /** Per-slide PNG load state (after the preview JSON returns). */
   let slideImagesLoaded = $state<Record<number, boolean>>({});
 
+  /** Cache-buster for pptx slide PNGs (manifest mtime:size, not submission mtime). */
+  let slideCacheKey = $state<string | null>(null);
+
   /** Track what we currently have loaded so we don't refetch identical content. */
   let loadedId = $state<string | null>(null);
   let loadedMtime = $state<string | null>(null);
@@ -42,6 +45,7 @@
         preview = null;
         loadedId = null;
         loadedMtime = null;
+        slideCacheKey = null;
         error = null;
       });
       return;
@@ -75,6 +79,8 @@
       preview = result;
       loadedId = id;
       loadedMtime = result.last_modified_at;
+      slideCacheKey =
+        result.type === "slides" ? result.slides_cache_key : null;
       error = null;
 
       if (!isInitial) {
@@ -137,6 +143,10 @@
     submission?.extension?.toLowerCase() === ".pptx"
   );
 
+  const slidesRerendering = $derived(
+    preview?.type === "slides" && preview.slides_cache === "stale"
+  );
+
   const loadingMessage = $derived(
     isPptx
       ? "Rendering slides from PowerPoint…"
@@ -155,6 +165,34 @@
     }
     slideImagesLoaded = {};
     void preview.slides.length;
+    void slideCacheKey;
+  });
+
+  /** Poll while the server re-renders stale slide PNGs after a file change. */
+  $effect(() => {
+    const current = submission;
+    const rerendering = slidesRerendering;
+    if (!current || !rerendering) return;
+
+    const id = current.id;
+    const interval = setInterval(async () => {
+      try {
+        const result = await fetchPreview(id);
+        if (result.type !== "slides" || result.slides_cache !== "fresh") return;
+        if (submission?.id !== id) return;
+
+        preview = result;
+        loadedMtime = result.last_modified_at;
+        slideCacheKey = result.slides_cache_key;
+        justUpdated = true;
+        if (updatedTimer) clearTimeout(updatedTimer);
+        updatedTimer = setTimeout(() => (justUpdated = false), 1600);
+      } catch {
+        /* keep polling */
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
   });
 </script>
 
@@ -200,7 +238,16 @@
     </div>
   {:else if preview?.type === "slides"}
     <div class="preview-slides-wrap">
-      {#if silentReloading}
+      {#if slidesRerendering}
+        <div
+          class="slides-rerender-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Changes detected — re-rendering slides from PowerPoint…</span>
+        </div>
+      {:else if silentReloading}
         <div class="slides-sync-banner" role="status" aria-live="polite">
           <span class="spinner" aria-hidden="true"></span>
           <span>Updating slides…</span>
@@ -218,7 +265,7 @@
               <img
                 class="slide-image"
                 class:loaded={slideImagesLoaded[slide.index]}
-                src={slideUrl(slide.image_path, loadedMtime ?? "")}
+                src={slideUrl(slide.image_path, slideCacheKey ?? loadedMtime ?? "")}
                 alt={`Slide ${slide.index}: ${slide.title}`}
                 loading="eager"
                 onload={() => markSlideImageLoaded(slide.index)}
@@ -415,7 +462,8 @@
     min-height: 12rem;
   }
 
-  .slides-sync-banner {
+  .slides-sync-banner,
+  .slides-rerender-banner {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -426,6 +474,12 @@
     border-radius: 8px;
     font-size: 0.85rem;
     color: var(--muted);
+  }
+
+  .slides-rerender-banner {
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface2));
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    color: var(--text);
   }
 
   .preview-slides {
