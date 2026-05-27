@@ -8,6 +8,7 @@ import { EventBus } from "./events.js";
 import { createRouter } from "./routes.js";
 import { scanWatchRoots } from "./scanner.js";
 import { SubmissionWatcher } from "./watcher.js";
+import { warmAllPptxSubmissions } from "./pptx-warm.js";
 
 const scanOnly = process.argv.includes("--scan");
 
@@ -30,6 +31,7 @@ async function main(): Promise<void> {
     console.log(
       `Scan complete: ${scanResult.scanned} files checked, ${scanResult.added} new entries.`
     );
+    warmAllPptxSubmissions(store);
     store.close();
     return;
   }
@@ -113,6 +115,7 @@ function runBackgroundScan(
     console.log(
       `Scan complete: ${scanResult.scanned} files checked, ${scanResult.added} new entries.`
     );
+    warmAllPptxSubmissions(store);
   } catch (e) {
     console.error("Background scan failed:", e);
   }

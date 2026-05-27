@@ -50,7 +50,11 @@ export type PreviewResponse =
   | { type: "slides"; slides: SlideRef[]; last_modified_at: string }
   | {
       type: "empty";
-      reason: "not_downloaded" | "empty_body" | "render_unavailable";
+      reason:
+        | "not_downloaded"
+        | "empty_body"
+        | "render_unavailable"
+        | "render_pending";
       message: string;
       last_modified_at: string;
     }

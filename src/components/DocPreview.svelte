@@ -26,6 +26,9 @@
   let error = $state<string | null>(null);
   let justUpdated = $state(false);
 
+  /** Per-slide PNG load state (after the preview JSON returns). */
+  let slideImagesLoaded = $state<Record<number, boolean>>({});
+
   /** Track what we currently have loaded so we don't refetch identical content. */
   let loadedId = $state<string | null>(null);
   let loadedMtime = $state<string | null>(null);
@@ -117,7 +120,7 @@
       `[data-heading-id="${CSS.escape(heading)}"]`
     );
     if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      target.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   });
 
@@ -128,6 +131,30 @@
     if (ext === ".pptx") return "Open in PowerPoint";
     if (ext === ".docx") return "Open in Word";
     return "Open externally";
+  });
+
+  const isPptx = $derived(
+    submission?.extension?.toLowerCase() === ".pptx"
+  );
+
+  const loadingMessage = $derived(
+    isPptx
+      ? "Rendering slides from PowerPoint…"
+      : "Loading preview…"
+  );
+
+  function markSlideImageLoaded(index: number) {
+    if (slideImagesLoaded[index]) return;
+    slideImagesLoaded = { ...slideImagesLoaded, [index]: true };
+  }
+
+  $effect(() => {
+    if (preview?.type !== "slides") {
+      slideImagesLoaded = {};
+      return;
+    }
+    slideImagesLoaded = {};
+    void preview.slides.length;
   });
 </script>
 
@@ -161,7 +188,10 @@
   </div>
 
   {#if initialLoading}
-    <p class="muted">Loading preview…</p>
+    <div class="preview-loading" role="status" aria-live="polite">
+      <span class="spinner" aria-hidden="true"></span>
+      <p>{loadingMessage}</p>
+    </div>
   {:else if error}
     <p class="error">{error}</p>
   {:else if preview?.type === "html"}
@@ -169,20 +199,38 @@
       {@html preview.html}
     </div>
   {:else if preview?.type === "slides"}
-    <div class="preview-slides" bind:this={previewHtmlEl}>
-      {#each preview.slides as slide (slide.index)}
-        <figure class="slide" data-heading-id={`slide-${slide.index}`}>
-          <figcaption class="slide-caption">
-            Slide {slide.index} — {slide.title}
-          </figcaption>
-          <img
-            class="slide-image"
-            src={slideUrl(slide.image_path, loadedMtime ?? "")}
-            alt={`Slide ${slide.index}: ${slide.title}`}
-            loading="lazy"
-          />
-        </figure>
-      {/each}
+    <div class="preview-slides-wrap">
+      {#if silentReloading}
+        <div class="slides-sync-banner" role="status" aria-live="polite">
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Updating slides…</span>
+        </div>
+      {/if}
+      <div class="preview-slides" bind:this={previewHtmlEl}>
+        {#each preview.slides as slide (slide.index)}
+          <figure class="slide" data-heading-id={`slide-${slide.index}`}>
+            <div class="slide-media">
+              {#if !slideImagesLoaded[slide.index]}
+                <div class="slide-media-loading" aria-hidden="true">
+                  <span class="spinner"></span>
+                </div>
+              {/if}
+              <img
+                class="slide-image"
+                class:loaded={slideImagesLoaded[slide.index]}
+                src={slideUrl(slide.image_path, loadedMtime ?? "")}
+                alt={`Slide ${slide.index}: ${slide.title}`}
+                loading="eager"
+                onload={() => markSlideImageLoaded(slide.index)}
+                onerror={() => markSlideImageLoaded(slide.index)}
+              />
+            </div>
+            <figcaption class="slide-caption">
+              Slide {slide.index} — {slide.title}
+            </figcaption>
+          </figure>
+        {/each}
+      </div>
     </div>
   {:else if preview?.type === "binary"}
     {#if preview.mime.startsWith("image/")}
@@ -334,6 +382,52 @@
     flex-wrap: wrap;
   }
 
+  .preview-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 2rem 0.5rem;
+    color: var(--muted);
+  }
+
+  .preview-loading p {
+    margin: 0;
+  }
+
+  .spinner {
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .preview-slides-wrap {
+    position: relative;
+    min-height: 12rem;
+  }
+
+  .slides-sync-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.75rem;
+    margin-bottom: 0.5rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
   .preview-slides {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -343,30 +437,56 @@
     overflow: auto;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     gap: 1rem;
   }
 
   .slide {
     margin: 0;
+    flex: 0 0 auto;
     background: var(--surface2);
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    scroll-margin: 0.5rem 0;
   }
 
-  .slide-caption {
-    padding: 0.45rem 0.85rem;
-    font-size: 0.8rem;
-    color: var(--muted);
-    border-bottom: 1px solid var(--border);
+  .slide-media {
+    position: relative;
+    flex: 0 0 auto;
+    background: #fff;
+    min-height: 10rem;
+  }
+
+  .slide-media-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface2);
   }
 
   .slide-image {
     display: block;
     width: 100%;
     height: auto;
-    background: #fff;
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+  }
+
+  .slide-image.loaded {
+    opacity: 1;
+  }
+
+  .slide-caption {
+    flex: 0 0 auto;
+    padding: 0.45rem 0.85rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    background: var(--surface2);
   }
 </style>

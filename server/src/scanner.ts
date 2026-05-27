@@ -8,6 +8,7 @@ import {
 } from "./parser.js";
 import type { SubmissionStore } from "./db.js";
 import type { EventBus } from "./events.js";
+import { warmPptxIfChanged } from "./pptx-warm.js";
 
 function walkDir(dir: string, files: string[]): void {
   let entries: fs.Dirent[];
@@ -67,7 +68,7 @@ export function scanWatchRoots(
         continue;
       }
 
-      const { isNew } = store.upsertFromFile(
+      const { isNew, contentChanged } = store.upsertFromFile(
         root.path,
         root.label,
         root.kind,
@@ -76,12 +77,13 @@ export function scanWatchRoots(
         stat.mtime,
         stat.size
       );
-      if (isNew) {
-        added++;
+      const id = submissionId(root.path, parsed.relative_path);
+      if (contentChanged) {
+        if (isNew) added++;
         if (events) {
           events.emit({
             type: "submission-changed",
-            id: submissionId(root.path, parsed.relative_path),
+            id,
             student: parsed.student,
             assignment: parsed.assignment,
             filename: parsed.filename,
@@ -90,6 +92,16 @@ export function scanWatchRoots(
             last_modified_at: stat.mtime.toISOString(),
           });
         }
+        warmPptxIfChanged(
+          {
+            id,
+            filename: parsed.filename,
+            absolute_path: filePath,
+            last_modified_at: stat.mtime.toISOString(),
+            size_bytes: stat.size,
+          },
+          true
+        );
       }
     }
   }

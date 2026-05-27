@@ -23,7 +23,11 @@ export type PreviewResult =
   | { type: "slides"; slides: SlideRef[] }
   | {
       type: "empty";
-      reason: "not_downloaded" | "empty_body" | "render_unavailable";
+      reason:
+        | "not_downloaded"
+        | "empty_body"
+        | "render_unavailable"
+        | "render_pending";
       message: string;
     }
   | { type: "unsupported"; message: string }
@@ -156,7 +160,7 @@ async function buildPptxPreview(
   if (!render.ok) {
     return {
       type: "empty",
-      reason: "render_unavailable",
+      reason: render.reason,
       message: render.message,
     };
   }

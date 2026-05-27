@@ -42,12 +42,12 @@ function makeFakeStore(): {
       parsed: { relative_path: string; filename: string },
       _mtime: Date,
       _size: number
-    ): { isNew: boolean } {
+    ): { isNew: boolean; contentChanged: boolean } {
       calls.push({ rootPath, label, filename: parsed.filename });
       const key = `${rootPath}::${parsed.relative_path}`;
       const isNew = !seenIds.has(key);
       seenIds.add(key);
-      return { isNew };
+      return { isNew, contentChanged: isNew };
     },
   };
   return { store: fake as unknown as SubmissionStore, calls, seenIds };

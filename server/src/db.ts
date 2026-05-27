@@ -64,7 +64,7 @@ export class SubmissionStore {
     parsed: ParsedPath,
     mtime: Date,
     size: number
-  ): { isNew: boolean } {
+  ): { isNew: boolean; contentChanged: boolean } {
     const id = submissionId(watchRoot, parsed.relative_path);
     const ext = path.extname(parsed.filename).toLowerCase();
     const now = new Date().toISOString();
@@ -72,10 +72,15 @@ export class SubmissionStore {
 
     const existing = this.db
       .prepare(
-        "SELECT first_seen_at, last_modified_at, status FROM submissions WHERE id = ?"
+        "SELECT first_seen_at, last_modified_at, size_bytes, status FROM submissions WHERE id = ?"
       )
       .get(id) as
-      | { first_seen_at: string; last_modified_at: string; status: string }
+      | {
+          first_seen_at: string;
+          last_modified_at: string;
+          size_bytes: number;
+          status: string;
+        }
       | undefined;
 
     if (!existing) {
@@ -102,10 +107,12 @@ export class SubmissionStore {
           now,
           mtimeIso
         );
-      return { isNew: true };
+      return { isNew: true, contentChanged: true };
     }
 
-    const contentChanged = existing.last_modified_at !== mtimeIso;
+    const contentChanged =
+      existing.last_modified_at !== mtimeIso ||
+      existing.size_bytes !== size;
     const status =
       contentChanged && existing.status === "seen" ? "new" : existing.status;
 
@@ -128,7 +135,7 @@ export class SubmissionStore {
         id
       );
 
-    return { isNew: contentChanged && status === "new" };
+    return { isNew: contentChanged && status === "new", contentChanged };
   }
 
   list(filters?: {
