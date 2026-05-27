@@ -6,11 +6,10 @@
   interface Props {
     response: StudentResponse;
     selected: boolean;
-    onSelect: (submissionId: string) => void;
     onJumpToDraft?: (draft: DraftElsewhere) => void;
   }
 
-  let { response, selected, onSelect, onJumpToDraft }: Props = $props();
+  let { response, selected, onJumpToDraft }: Props = $props();
 
   const isRosterPlaceholder = $derived(
     response.excerpt_status === "not_submitted"
@@ -76,33 +75,21 @@
     if (draft && onJumpToDraft) onJumpToDraft(draft);
   }
 
-  function handleCardClick() {
-    if (isRosterPlaceholder) return;
-    onSelect(response.submission_id);
-  }
-
-  function handleCardKey(e: KeyboardEvent) {
-    if (isRosterPlaceholder) return;
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onSelect(response.submission_id);
-    }
-  }
 </script>
 
-<!-- div + role=button instead of <button> so the "View draft" button below
-     can be a real nested button without producing invalid HTML. -->
+<!-- Opens inspector via inspectClickRouter.ts (card click; jump-btn excluded). -->
 <div
   class="card"
   class:selected
   class:is-new={response.status === "new" && !isRosterPlaceholder}
   class:roster-placeholder={isRosterPlaceholder}
-  role="button"
-  tabindex={isRosterPlaceholder ? -1 : 0}
-  aria-pressed={selected}
-  aria-disabled={isRosterPlaceholder}
-  onclick={handleCardClick}
-  onkeydown={handleCardKey}
+  data-submission-id={response.submission_id}
+  data-roster-placeholder={isRosterPlaceholder ? "1" : "0"}
+  role={isRosterPlaceholder ? "group" : "button"}
+  tabindex={isRosterPlaceholder ? undefined : 0}
+  aria-label={isRosterPlaceholder
+    ? response.student
+    : `Inspect ${response.student}`}
 >
   <header class="card-head">
     <span class="name">{response.student}</span>
@@ -167,6 +154,10 @@
 </div>
 
 <style>
+  .card:not(.roster-placeholder) {
+    cursor: pointer;
+  }
+
   .card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -177,7 +168,6 @@
     gap: 0.5rem;
     text-align: left;
     color: inherit;
-    cursor: pointer;
     transition:
       border-color 0.15s,
       transform 0.08s,

@@ -136,7 +136,8 @@ An assignment-centric view for watching students as they work.
   - A short excerpt of the document.
   - When it was last modified.
 - The right side shows **metrics** for the selected student, or a **class summary** when nothing is selected.
-- **Question dropdown** (when the doc has headings) jumps the preview to that question.
+- **Click a student card** to open a full-screen inspector: document preview on the left, that student's metrics on the right. Press Esc, click the backdrop, or use the × button to close.
+- **Question dropdown** (when the doc has headings) jumps the preview to that question (Browse mode and the inspector when headings are wired there).
 
 Use Live Monitor during a class to see who's writing, who's stuck, and who hasn't started.
 
@@ -181,9 +182,13 @@ Stay in **Browse** mode → set Kind = **Submitted only** → optionally filter 
 
 Click **Scan folders** in the header. This forces a re-walk of every configured watch root.
 
+### "I want to read a student's full document during class"
+
+**Live Monitor** → pick class and assignment → **click the student's card**. The inspector modal opens with the full preview. **Open in Word** is inside the preview header (same as Browse mode).
+
 ### "I want to open a file in Word"
 
-In Browse mode the preview pane has an **Open in Word** button. In Live Monitor mode it's in the right-side metrics panel.
+In Browse mode the preview pane has an **Open in Word** button. In Live Monitor, open the inspector on a card, or use **Open in Word** in the right-side metrics panel when a student is selected.
 
 ### "I want to start fresh"
 

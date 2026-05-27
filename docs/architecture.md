@@ -98,7 +98,10 @@ A poll fallback (`poll_fallback_seconds`, default 30) walks the watch roots peri
 
 | File | Role |
 |------|------|
-| `main.ts`, `App.svelte` | Bootstraps the app and hosts the Browse / Live Monitor mode toggle. |
+| `main.ts`, `App.svelte` | Bootstraps the app, installs the card-click inspector router, hosts the Browse / Live Monitor mode toggle. |
+| `lib/inspectClickRouter.ts` | Document-level click handler on student cards → opens the inspector. |
+| `lib/inspectorOpen.svelte.ts` | `openInspector` / `closeInspector` — imperative `mount()` of `ResponseInspectorModal` on `document.body`. |
+| `lib/monitorContext.svelte.ts` | Grid row snapshot (`syncMonitorGrid`) so the inspector can resolve a card's `StudentResponse` without relying on parent re-renders. |
 | `app.css` | Design tokens: `--surface`, `--surface2`, `--border`, `--text`, `--muted`, `--accent`, `--new`, `--new-bg`, `--warn`. **Reuse these, don't hardcode colours.** |
 | `lib/api.ts` | All fetch wrappers + the SSE subscriber. Anything new on the wire is typed here first. |
 | `lib/metrics.svelte.ts` | `now` shared ticker (15 s), `formatRelativeTime`, `activityState`. Named `.svelte.ts` because runes don't work in plain `.ts`. |
@@ -106,7 +109,8 @@ A poll fallback (`poll_fallback_seconds`, default 30) walks the watch roots peri
 | `components/DocPreview.svelte` | Single-doc HTML/binary preview with stale-guard + silent reload. **Reuse, don't reimplement.** |
 | `components/SelectionBar.svelte` | Class / Assignment / Question / Kind / Search controls for the monitor view. |
 | `components/StudentResponseGrid.svelte` | Grid of student cards (loading + empty states live here). |
-| `components/StudentResponseCard.svelte` | One student tile: name, activity dot, kind badge, word count, excerpt. |
+| `components/StudentResponseCard.svelte` | One student tile: name, activity dot, kind badge, word count, excerpt. Card click opens the inspector (roster placeholders are not clickable). |
+| `components/ResponseInspectorModal.svelte` | Full-screen overlay: `DocPreview` + per-student metrics. Mounted imperatively, not via `App.svelte`. |
 | `components/MetricsPanel.svelte` | Right-side panel: per-student metrics or class summary if none selected. |
 | `components/MetricRow.svelte` | Label/value row, with placeholder styling for future metrics. |
 | `components/ActivityIndicator.svelte` | Live/recent/idle dot driven by `now` + `last_modified_at`. |

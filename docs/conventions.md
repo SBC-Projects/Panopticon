@@ -82,6 +82,9 @@ Grep before you write.
 - ❌ Deleting Browse mode or the existing sidebar. Both views coexist.
 - ❌ Adding routing. There's none, and nothing needs it yet.
 - ❌ Committing without being asked.
+- ❌ Opening a modal/overlay from a distant `{#if}` in `App.svelte` when the open path is a document-level click handler. If the trigger runs outside the normal Svelte event tree, mount the dialog with Svelte's `mount()` on `document.body` (see `src/lib/inspectorOpen.svelte.ts`).
+- ❌ Mirroring parent state into a module via `$effect` for use by that open path. Update the module synchronously at the write site (e.g. `syncMonitorGrid()` when the grid loads).
+- ❌ Stacking debug probes (counters, fixed overlays, `console.log` spam) when "the click fires but nothing appears". Check the render/mount path first; verify in a real browser tab (`http://localhost:5173`), not only an embedded IDE preview.
 
 ---
 

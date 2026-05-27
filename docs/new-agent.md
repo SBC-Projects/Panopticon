@@ -127,6 +127,13 @@ Before writing feature code, decide **how you will know it works**. See [`workfl
 - **Server change touching DB / FS / HTTP**: a `scratch/` script that hits the endpoint or calls the function with real data.
 - **Client change**: a manual reproduction recipe (steps in the browser, network tab checks, expected SSE behaviour).
 
+**UI overlays and modals** (dialogs, inspectors, full-screen panels opened from a click):
+
+1. Run the browser recipe in a **normal tab** (Chrome or Edge at `http://localhost:5173`). Cursor's embedded Simple Browser can miss Svelte re-renders or `onclick` handlers even when plain `document.addEventListener` works — don't treat that as proof the code is wrong.
+2. If the open trigger is a **document-level listener** (delegated clicks, portaled buttons), open the UI with **`mount(Component, { target: document.body, props })`** and `unmount` on close — do not rely on a `{#if}` high in `App.svelte` updating.
+3. If the modal needs grid/API row data, **sync that data synchronously** when the parent loads or patches rows (`syncMonitorGrid`-style). Do not mirror via `$effect` alone.
+4. The recipe must include **"modal/dialog visible on screen"**, not only "handler ran" or "router logged opened".
+
 Also make sure you can run the app in dev:
 
 ```powershell

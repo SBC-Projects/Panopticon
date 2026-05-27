@@ -12,7 +12,6 @@
     type SubmissionKind,
     type Summary,
   } from "$lib/api";
-
   type Mode = "browse" | "monitor";
   let mode = $state<Mode>("browse");
 
@@ -108,6 +107,7 @@
   const selected = $derived(
     selectedId ? (submissions.find((s) => s.id === selectedId) ?? null) : null
   );
+
 </script>
 
 <div class="layout">
