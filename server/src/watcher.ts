@@ -7,6 +7,7 @@ import type { SubmissionStore } from "./db.js";
 import type { EventBus } from "./events.js";
 import { invalidateDocStats } from "./metrics.js";
 import { invalidateStructure } from "./structure.js";
+import { invalidatePptxCache } from "./pptx-render.js";
 
 export type OnNewSubmission = (info: {
   id: string;
@@ -176,6 +177,8 @@ export class SubmissionWatcher {
 
     invalidateDocStats(id);
     invalidateStructure(id);
+    // Cheap no-op for non-pptx ids (force:true on a missing dir).
+    invalidatePptxCache(id);
 
     this.events.emit({
       type: "submission-deleted",

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import mammoth from "mammoth";
+import { extractPptxSlideTitles } from "./pptx.js";
 
 export interface Heading {
   id: string;
@@ -15,9 +16,12 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 
 /**
- * Extract h1–h3 headings from a docx. Cached per (submissionId, mtime).
- * Heading ids are deterministic slugs so the same `data-heading-id` can be
- * injected into preview HTML for scrollToHeading sync.
+ * Extract a heading-like outline for a submission, cached per
+ * `(submissionId, mtime)`. For `.docx` it's the h1–h3 headings from
+ * mammoth's HTML output; for `.pptx` it's one entry per slide
+ * (`{id: "slide-N", level: 1, text: title}`) using the same slug-id
+ * shape so the Question dropdown and the preview's scroll-to-heading
+ * effect work uniformly across both file types.
  */
 export async function getStructure(
   submissionId: string,
@@ -37,13 +41,21 @@ async function computeStructure(
   absolutePath: string,
   extension: string
 ): Promise<Heading[]> {
-  if (extension !== ".docx") return [];
+  if (extension !== ".docx" && extension !== ".pptx") return [];
   if (!fs.existsSync(absolutePath)) return [];
 
   try {
     const buffer = fs.readFileSync(absolutePath);
-    const result = await mammoth.convertToHtml({ buffer });
-    return parseHeadings(result.value || "");
+    if (extension === ".docx") {
+      const result = await mammoth.convertToHtml({ buffer });
+      return parseHeadings(result.value || "");
+    }
+    const titles = await extractPptxSlideTitles(buffer);
+    return titles.map((t) => ({
+      id: `slide-${t.index}`,
+      level: 1 as const,
+      text: t.title,
+    }));
   } catch {
     return [];
   }

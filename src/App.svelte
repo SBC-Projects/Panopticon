@@ -4,10 +4,12 @@
   import {
     fetchSummary,
     fetchSubmissions,
+    fetchStructure,
     markAllSeen,
     triggerScan,
     formatDate,
     subscribeToEvents,
+    type Heading,
     type Submission,
     type SubmissionKind,
     type Summary,
@@ -27,6 +29,11 @@
   let filterStudent = $state("");
   let filterAssignment = $state("");
   let filterKind = $state<"" | SubmissionKind>("");
+
+  /** Docx headings / pptx slide titles for the Browse preview navigator. */
+  let headings = $state<Heading[]>([]);
+  let selectedHeading = $state("");
+  let structureFetchSeq = 0;
 
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -108,6 +115,36 @@
     selectedId ? (submissions.find((s) => s.id === selectedId) ?? null) : null
   );
 
+  const structureNavLabel = $derived(
+    selected?.extension === ".pptx" ? "Slide" : "Question"
+  );
+
+  const showStructureNav = $derived(
+    selected?.extension === ".docx" || selected?.extension === ".pptx"
+  );
+
+  async function loadHeadingsForSelection(sub: Submission) {
+    const ticket = ++structureFetchSeq;
+    headings = [];
+    selectedHeading = "";
+    try {
+      const list = await fetchStructure(sub.id);
+      if (ticket !== structureFetchSeq) return;
+      headings = list;
+    } catch {
+      // structure is best-effort; preview still works without the dropdown
+    }
+  }
+
+  $effect(() => {
+    const sub = selected;
+    if (!sub || (sub.extension !== ".docx" && sub.extension !== ".pptx")) {
+      headings = [];
+      selectedHeading = "";
+      return;
+    }
+    void loadHeadingsForSelection(sub);
+  });
 </script>
 
 <div class="layout">
@@ -248,7 +285,27 @@
       </aside>
 
       <main class="preview-pane">
-        <DocPreview submission={selected} />
+        {#if showStructureNav}
+          <label class="structure-nav">
+            <span class="structure-nav-label">{structureNavLabel}</span>
+            <select
+              bind:value={selectedHeading}
+              disabled={headings.length === 0}
+            >
+              <option value="">— Whole document —</option>
+              {#each headings as h}
+                <option value={h.id}>
+                  {"".padStart((h.level - 1) * 2, "·")}
+                  {h.text}
+                </option>
+              {/each}
+            </select>
+          </label>
+        {/if}
+        <DocPreview
+          submission={selected}
+          scrollToHeading={selectedHeading || null}
+        />
       </main>
     </div>
   {:else}
@@ -533,5 +590,26 @@
     padding: 1rem 1.25rem;
     overflow: auto;
     max-height: calc(100vh - 200px);
+  }
+
+  .structure-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.75rem;
+    max-width: 28rem;
+  }
+
+  .structure-nav-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .structure-nav select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

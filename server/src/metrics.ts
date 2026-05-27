@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import mammoth from "mammoth";
+import { extractPptxText } from "./pptx.js";
 
 /**
  * Why an excerpt might be missing. Lets the UI explain the failure
@@ -79,7 +80,7 @@ async function computeStats(
   absolutePath: string,
   extension: string
 ): Promise<DocStats> {
-  if (extension !== ".docx") {
+  if (extension !== ".docx" && extension !== ".pptx") {
     return { word_count: null, excerpt: "", excerpt_status: "unsupported_ext" };
   }
   if (!fs.existsSync(absolutePath)) {
@@ -98,19 +99,45 @@ async function computeStats(
     return { word_count: 0, excerpt: "", excerpt_status: "not_downloaded" };
   }
 
+  return extension === ".docx"
+    ? computeDocxStats(absolutePath, buffer)
+    : computePptxStats(absolutePath, buffer);
+}
+
+async function computeDocxStats(
+  absolutePath: string,
+  buffer: Buffer
+): Promise<DocStats> {
   try {
     const result = await mammoth.extractRawText({ buffer });
-    const text = (result.value || "").trim();
-    if (!text) {
-      return { word_count: 0, excerpt: "", excerpt_status: "empty_body" };
-    }
-    const word_count = text.split(/\s+/).length;
-    const excerpt = truncate(text, EXCERPT_LENGTH);
-    return { word_count, excerpt, excerpt_status: "ok" };
+    return statsFromText(result.value || "");
   } catch (err) {
     logParseFailure("mammoth", absolutePath, err);
     return { word_count: null, excerpt: "", excerpt_status: "parse_error" };
   }
+}
+
+async function computePptxStats(
+  absolutePath: string,
+  buffer: Buffer
+): Promise<DocStats> {
+  try {
+    const result = await extractPptxText(buffer);
+    return statsFromText(result.text);
+  } catch (err) {
+    logParseFailure("jszip", absolutePath, err);
+    return { word_count: null, excerpt: "", excerpt_status: "parse_error" };
+  }
+}
+
+function statsFromText(raw: string): DocStats {
+  const text = raw.trim();
+  if (!text) {
+    return { word_count: 0, excerpt: "", excerpt_status: "empty_body" };
+  }
+  const word_count = text.split(/\s+/).length;
+  const excerpt = truncate(text, EXCERPT_LENGTH);
+  return { word_count, excerpt, excerpt_status: "ok" };
 }
 
 function logParseFailure(stage: string, absolutePath: string, err: unknown): void {

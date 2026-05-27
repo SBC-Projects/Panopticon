@@ -202,6 +202,7 @@ These live in memory, not the DB. Don't mistake them for state:
 | Cache | Where | Key | Invalidated when |
 |-------|-------|-----|------------------|
 | Doc stats (`word_count`, `excerpt`, `excerpt_status`) | `server/src/metrics.ts` `getDocStats` | `submission_id` | `last_modified_at` **or** file size changes (size catches OneDrive 0-byte → real-bytes transitions) |
-| Structure (headings) | `server/src/structure.ts` `getStructure` | `(submission_id, last_modified_at)` | Process restart or mtime change |
+| Structure (headings / slide titles) | `server/src/structure.ts` `getStructure` | `(submission_id, last_modified_at)` | Process restart or mtime change |
+| Pptx rendered slides | **On disk** at `data/pptx-cache/<submission_id>/` (`manifest.json` + `slide-NNN.png`) | `submission_id` | `last_modified_at` **or** size in `manifest.json` doesn't match the current file → wiped and re-rendered. Also wiped explicitly by `invalidatePptxCache(id)` on `submission-deleted` (see `watcher.ts` `processDelete`) |
 
-Process restart wipes both. That's fine; first request after restart pays the recompute.
+The first two reset on process restart; the on-disk pptx cache survives restart (and is the only reason a teacher who reopens the app doesn't pay another 3–5 s render per deck). `data/` is gitignored so the cache never leaves the machine. First request after restart pays the recompute for the in-memory caches; the on-disk one only pays when (mtime, size) changes.

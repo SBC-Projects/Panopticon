@@ -112,6 +112,10 @@ When a student's row in the current view is empty (or a roster placeholder), the
 
 The reason a card's excerpt is or isn't populated. One of `ok`, `empty_body`, `not_downloaded`, `missing`, `unsupported_ext`, `parse_error`, `not_submitted`. Drives card empty-state copy and the placeholder treatment. See [`api.md`](./api.md#excerpt_status--why-a-card-may-be-blank) for the full table.
 
+### Slide title
+
+For a `.pptx` submission, the text inside the slide's **title placeholder** (`<p:ph type="title">` or `type="ctrTitle">` in the slide XML). Distinct from a docx **heading**: docx headings come from the author applying a Heading style to a paragraph, whereas slide titles come from a layout-bound placeholder shape — almost every deck has them, almost no student docx does. Slides without a title placeholder fall back to `Slide <N>` so the Question dropdown never has blank entries. Extracted by `extractPptxSlideTitles` in [`server/src/pptx.ts`](../../server/src/pptx.ts) and surfaced as `Heading` entries with `level: 1` and `id: "slide-<N>"`.
+
 ### Scratch
 
 Folder for one-off scripts, fixtures, and notes. Gitignored. See [`workflows/testing.md`](../workflows/testing.md).

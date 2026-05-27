@@ -63,8 +63,10 @@ These already exist. Use them.
 | Relative time / activity state / shared "now" ticker | `src/lib/metrics.svelte.ts` |
 | File watcher | `SubmissionWatcher` in `server/src/watcher.ts` |
 | In-process event bus | `EventBus` in `server/src/events.ts` |
-| `.docx` text extraction + word count + excerpt | `getDocStats` in `server/src/metrics.ts` |
-| `.docx` heading extraction | `getStructure` + `injectHeadingIds` in `server/src/structure.ts` |
+| `.docx` text extraction + word count + excerpt | `getDocStats` in `server/src/metrics.ts` (handles `.pptx` too) |
+| `.docx` heading extraction | `getStructure` + `injectHeadingIds` in `server/src/structure.ts` (handles `.pptx` slide titles too) |
+| `.pptx` text + slide titles (pure JS, no Office required) | `extractPptxText`, `extractPptxSlideTitles` in `server/src/pptx.ts` |
+| `.pptx` per-slide PNG rendering via PowerPoint COM (Windows + Office only) | `renderPptxSlides` + `pptxSlideStream` + `invalidatePptxCache` in `server/src/pptx-render.ts` |
 | `Submission` filtering | `SubmissionStore.list` in `server/src/db.ts` |
 
 Grep before you write.

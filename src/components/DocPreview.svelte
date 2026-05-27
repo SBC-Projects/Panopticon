@@ -5,6 +5,7 @@
     fileUrl,
     openInApp,
     formatDate,
+    slideUrl,
     type Submission,
     type PreviewResponse,
   } from "$lib/api";
@@ -119,6 +120,15 @@
       target.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   });
+
+  // Which "Open in <app>" copy to show. Driven by extension so a future
+  // file type slots in without touching the markup.
+  const openAppLabel = $derived.by(() => {
+    const ext = submission?.extension?.toLowerCase() ?? "";
+    if (ext === ".pptx") return "Open in PowerPoint";
+    if (ext === ".docx") return "Open in Word";
+    return "Open externally";
+  });
 </script>
 
 {#if !submission}
@@ -145,7 +155,7 @@
       </p>
     </div>
     <div class="actions">
-      <button type="button" onclick={handleOpen}>Open in Word</button>
+      <button type="button" onclick={handleOpen}>{openAppLabel}</button>
       <button type="button" onclick={manualRefresh}>Refresh</button>
     </div>
   </div>
@@ -157,6 +167,22 @@
   {:else if preview?.type === "html"}
     <div class="preview-html" bind:this={previewHtmlEl}>
       {@html preview.html}
+    </div>
+  {:else if preview?.type === "slides"}
+    <div class="preview-slides" bind:this={previewHtmlEl}>
+      {#each preview.slides as slide (slide.index)}
+        <figure class="slide" data-heading-id={`slide-${slide.index}`}>
+          <figcaption class="slide-caption">
+            Slide {slide.index} — {slide.title}
+          </figcaption>
+          <img
+            class="slide-image"
+            src={slideUrl(slide.image_path, loadedMtime ?? "")}
+            alt={`Slide ${slide.index}: ${slide.title}`}
+            loading="lazy"
+          />
+        </figure>
+      {/each}
     </div>
   {:else if preview?.type === "binary"}
     {#if preview.mime.startsWith("image/")}
@@ -177,12 +203,12 @@
       <p>{preview.message}</p>
       <div class="empty-actions">
         <button type="button" onclick={manualRefresh}>Re-check file</button>
-        <button type="button" class="primary" onclick={handleOpen}>Open in Word</button>
+        <button type="button" class="primary" onclick={handleOpen}>{openAppLabel}</button>
       </div>
     </div>
   {:else if preview?.type === "unsupported" || preview?.type === "error"}
     <p class="muted">{preview.message}</p>
-    <button type="button" class="primary" onclick={handleOpen}>Open in Word</button>
+    <button type="button" class="primary" onclick={handleOpen}>{openAppLabel}</button>
   {/if}
 {/if}
 
@@ -306,5 +332,41 @@
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
+  }
+
+  .preview-slides {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    max-height: calc(100vh - 12rem);
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .slide {
+    margin: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .slide-caption {
+    padding: 0.45rem 0.85rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .slide-image {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #fff;
   }
 </style>

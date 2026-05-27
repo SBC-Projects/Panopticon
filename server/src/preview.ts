@@ -3,11 +3,29 @@ import path from "node:path";
 import mammoth from "mammoth";
 import type { Submission } from "./types.js";
 import { injectHeadingIds } from "./structure.js";
+import { renderPptxSlides } from "./pptx-render.js";
+
+export interface SlideRef {
+  /** 1-based, matches PowerPoint's UI numbering. */
+  index: number;
+  /** From the deck's title placeholder, or `Slide N` fallback. */
+  title: string;
+  /**
+   * Relative API path the client appends `?v=<mtime>` to for
+   * cache-busting. See `GET /api/preview/:id/slide/:n` in routes.ts.
+   */
+  image_path: string;
+}
 
 export type PreviewResult =
   | { type: "html"; html: string }
   | { type: "binary"; mime: string }
-  | { type: "empty"; reason: "not_downloaded" | "empty_body"; message: string }
+  | { type: "slides"; slides: SlideRef[] }
+  | {
+      type: "empty";
+      reason: "not_downloaded" | "empty_body" | "render_unavailable";
+      message: string;
+    }
   | { type: "unsupported"; message: string }
   | { type: "error"; message: string };
 
@@ -87,6 +105,10 @@ export async function buildPreview(
     }
   }
 
+  if (ext === ".pptx") {
+    return buildPptxPreview(submission, filePath);
+  }
+
   const mime = MIME[ext];
   if (mime) {
     return { type: "binary", mime };
@@ -96,6 +118,64 @@ export async function buildPreview(
     type: "unsupported",
     message: `Preview not available for ${ext || "this file type"}. Use Open in Word or download from the synced folder.`,
   };
+}
+
+async function buildPptxPreview(
+  submission: Submission,
+  filePath: string
+): Promise<PreviewResult> {
+  let size = 0;
+  try {
+    size = fs.statSync(filePath).size;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "stat failed";
+    return {
+      type: "error",
+      message: `Could not read PowerPoint file: ${msg}. Use Open in PowerPoint.`,
+    };
+  }
+
+  if (size === 0) {
+    return {
+      type: "empty",
+      reason: "not_downloaded",
+      message:
+        "OneDrive hasn't downloaded this file yet (0 bytes on disk). It should appear once sync catches up — or right-click it in Explorer → Always keep on this device.",
+    };
+  }
+
+  // Cached on disk by (mtime, size). First call per deck-version pays
+  // the PowerPoint COM round-trip (~3–5 s); subsequent calls return
+  // from the manifest in <100 ms.
+  const render = await renderPptxSlides(
+    submission.id,
+    filePath,
+    submission.last_modified_at,
+    size
+  );
+  if (!render.ok) {
+    return {
+      type: "empty",
+      reason: "render_unavailable",
+      message: render.message,
+    };
+  }
+
+  if (render.manifest.slide_count === 0) {
+    return {
+      type: "empty",
+      reason: "empty_body",
+      message:
+        "This deck has no slides yet. The student may not have added anything, or OneDrive hasn't pulled the latest SharePoint state yet.",
+    };
+  }
+
+  const slides: SlideRef[] = render.manifest.titles.map((title, i) => ({
+    index: i + 1,
+    title,
+    image_path: `/api/preview/${submission.id}/slide/${i + 1}`,
+  }));
+  return { type: "slides", slides };
 }
 
 export function getFileStream(submission: Submission): fs.ReadStream | null {

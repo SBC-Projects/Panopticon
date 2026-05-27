@@ -6,6 +6,7 @@ import { buildPreview, getFileStream } from "./preview.js";
 import { scanWatchRoots } from "./scanner.js";
 import { getDocStats } from "./metrics.js";
 import { getStructure } from "./structure.js";
+import { pptxSlideStream } from "./pptx-render.js";
 import { getClassRoster, findDraftElsewhere } from "./roster.js";
 import type { AppConfig, Submission, SubmissionKind } from "./types.js";
 import type { EventBus } from "./events.js";
@@ -245,6 +246,35 @@ export function createRouter(
 
     const preview = await buildPreview(row);
     res.json({ ...preview, last_modified_at: row.last_modified_at });
+  });
+
+  // Per-slide PNG for .pptx previews. Cached under data/pptx-cache/<id>/
+  // by pptx-render.ts. The URL is content-immutable because the client
+  // appends ?v=<last_modified_at> for cache-busting on file edits.
+  router.get("/preview/:id/slide/:n", (req, res) => {
+    const row = store.getById(req.params.id);
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const n = Number(req.params.n);
+    if (!Number.isInteger(n) || n < 1) {
+      res.status(400).json({ error: "Invalid slide index" });
+      return;
+    }
+
+    const stream = pptxSlideStream(row.id, n);
+    if (!stream) {
+      res.status(404).json({
+        error: "Slide image not available (deck not rendered or out of range)",
+      });
+      return;
+    }
+
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    stream.pipe(res);
   });
 
   router.get("/file/:id", (req, res) => {
