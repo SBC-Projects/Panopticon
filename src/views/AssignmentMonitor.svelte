@@ -297,10 +297,14 @@
     const cls = selectedClass;
     if (!cls) return [];
     const names = new Set<string>();
+    const ordered: string[] = [];
     for (const row of summary?.assignments ?? []) {
-      if (row.watch_root_label === cls) names.add(row.assignment);
+      if (row.watch_root_label !== cls) continue;
+      if (names.has(row.assignment)) continue;
+      names.add(row.assignment);
+      ordered.push(row.assignment);
     }
-    return [...names].sort((a, b) => a.localeCompare(b));
+    return ordered;
   });
 
   function handleClassChange(next: string) {

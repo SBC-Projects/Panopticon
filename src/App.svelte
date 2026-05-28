@@ -16,7 +16,7 @@
   } from "$lib/api";
   import { closeInspector } from "$lib/inspectorOpen.svelte";
   type Mode = "browse" | "monitor";
-  let mode = $state<Mode>("browse");
+  let mode = $state<Mode>("monitor");
 
   function setMode(next: Mode) {
     if (next === "browse") {
